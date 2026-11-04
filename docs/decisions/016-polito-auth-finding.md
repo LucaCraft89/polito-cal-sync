@@ -11,6 +11,14 @@
 
 **Probe bug found and fixed:** the shape check treated that 500 as "unclear" and still sent the owner's real password with the rejected body (harmless here, the server rejected the request before checking credentials, but against the promise). Now the real password is sent only with a shape that got 401/403 from fake credentials.
 
+**Web-portal HAR (owner's own browser session, 2026-11-04; read for structure only, values never copied).** This is the **web portal** (`didattica.polito.it`, SAML single sign-on), not the `app.didattica.polito.it/api` login the probe is stuck on: no request to the app API is in it.
+
+- Login is **SAML via `idp.polito.it`** (Shibboleth): GET the SSO redirect, the form page offers a password form (`j_username`, `j_password`, `csrf_token`, `_eventId_proceed`) **or** a passkey button (`_eventId_fudispasskeys`, `fudis_web_authn_assertion_input`); POST the password form; the answer is an auto-submitting page with `SAMLResponse` + `RelayState`, which is POSTed to `/Shibboleth.sso/SAML2/POST` and then 302 chains lead to a logged-in portal.
+- **In this session the password POST was enough: no MFA step appeared between the password POST and the SAML response** (for a browser that may have been a trusted device; cookies were stripped from the HAR, so this cannot be told). The IdP was passed twice (once for `www.polito.it`, once for `didattica.polito.it`), each with its own password POST.
+- After login the portal is cookie-session based with legacy endpoints: `GET /pls/portal30/sviluppo.studente.getStudentData` (JSON, one call with sections such as `orari`, `appelli`, `agenda`, `carico`, `career`, ...) and `POST .../sviluppo.studente.getOrariLezioneStudente` (`Content-Type: text/x-json`, body fields `from`, `to`; answer `{orari:{data:{stato, lezioni:[...]}}}`).
+- Consequence: a **second possible route** exists (headless SAML login with the password, then the portal JSON). It is fragile (CSRF token, SAML forwarding, cookie jar, HTML-ish answers) and unattended MFA behaviour for a new "device" is unknown (RESEARCH: trusted device lasts 90 days). Not adopted; any use needs the owner's decision and a probe of its own.
+- **The HAR held the owner's real username and password in clear text.** It was not stored in the repo; the owner should change the password and treat the file as a secret.
+
 | Question (all UNVERIFIED)                                                   | Finding                                     |
 | --------------------------------------------------------------------------- | ------------------------------------------- |
 | Does `POST /auth/login` (basic) accept the body in `probe/lib/session.mjs`? | pending                                     |
