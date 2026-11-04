@@ -1,0 +1,28 @@
+# One command to start: `docker compose up -d`, then open http://localhost:8787 (wizard arrives in M5).
+services:
+  polito-cal-sync:
+    build: .
+    image: polito-cal-sync:local
+    container_name: polito-cal-sync
+    # M0/M1: `serve` is not implemented yet and exits with a clear message, so do not restart-loop.
+    # Switch to `unless-stopped` when M2 lands the serve loop.
+    restart: 'no'
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Europe/Rome}
+    ports:
+      # Local only: the wizard and status page must never be reachable from the network.
+      - '127.0.0.1:8787:8787'
+    volumes:
+      - polito-cal-sync-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  polito-cal-sync-data:
