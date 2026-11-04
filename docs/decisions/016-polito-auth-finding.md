@@ -7,6 +7,8 @@
 - Server `Apache/2.4.6 (CentOS)`; `GET /api` answers 301 (HTML); `/health` and `/version` do not exist (404); `/lectures` without a token answers **401** with JSON `{error: string, code: integer}` and **no `WWW-Authenticate` header**. CORS allows the request headers `Content-Type, X-Username, Authorization, X-Test-Mode`. Errors have the form `{error, code}`.
 - `POST /auth/login` with our guessed body (`type`, `username`, `password`, `preferences`) answers **HTTP 500** `{"error":"Missing required params (device_platform,device_version,device_model)","code":-6}`: a request-shape problem reported as a 500, before credentials are looked at. So the guessed body is wrong; where the three device fields go is unknown (probe 02 now tries body, `preferences`, query with fake credentials).
 
+**Second run (fixed probe):** the three JSON-based placements of the device fields (top level, inside `preferences`, query string, with fake credentials) all got the same 500 `Missing required params`; the safeguard held and the real password was not sent. Hypothesis (unverified): this is a legacy server (Apache/CentOS, snake_case, `{error, code}`) that reads only form fields, so it never sees a JSON body. Probe 02 now also tries two form-encoded bodies (`form-flat`, `form-flat-with-type`).
+
 **Probe bug found and fixed:** the shape check treated that 500 as "unclear" and still sent the owner's real password with the rejected body (harmless here, the server rejected the request before checking credentials, but against the promise). Now the real password is sent only with a shape that got 401/403 from fake credentials.
 
 | Question (all UNVERIFIED)                                                   | Finding                                     |

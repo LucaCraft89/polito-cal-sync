@@ -60,7 +60,7 @@ export class Http {
   /**
    * @param {string} method
    * @param {string} path  starts with "/" (or is "" for the base URL itself)
-   * @param {{ query?: Record<string, string>, body?: unknown, token?: string,
+   * @param {{ query?: Record<string, string>, body?: unknown, form?: Record<string, string>, token?: string,
    *           stopOn?: number[], retry5xx?: boolean }} [o]
    */
   async request(method, path, o = {}) {
@@ -72,7 +72,8 @@ export class Http {
       if (wait > 0) await sleep(wait);
       /** @type {Record<string, string>} */
       const headers = { 'user-agent': USER_AGENT, accept: 'application/json' };
-      if (o.body !== undefined) headers['content-type'] = 'application/json';
+      if (o.form !== undefined) headers['content-type'] = 'application/x-www-form-urlencoded';
+      else if (o.body !== undefined) headers['content-type'] = 'application/json';
       if (o.token) headers.authorization = `Bearer ${o.token}`;
       let res;
       let text;
@@ -82,7 +83,11 @@ export class Http {
           headers,
           redirect: 'manual',
           signal: AbortSignal.timeout(TIMEOUT_MS),
-          ...(o.body !== undefined ? { body: JSON.stringify(o.body) } : {}),
+          ...(o.form !== undefined
+            ? { body: new URLSearchParams(o.form).toString() }
+            : o.body !== undefined
+              ? { body: JSON.stringify(o.body) }
+              : {}),
         });
         text = await res.text();
       } catch (err) {

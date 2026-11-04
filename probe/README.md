@@ -28,9 +28,9 @@ Sends 4 GET requests with no credentials: the API root, `/health`, `/version` (g
 node probe/02-login.mjs
 ```
 
-Sends at most 7 requests (about 4 more with `--enrol`):
+Sends at most 9 requests (about 4 more with `--enrol`):
 
-1. `POST /auth/login` with a **fake** username and password, up to 3 times with different request shapes. The first real answer showed the server needs `device_platform`, `device_version`, `device_model`, and it is unknown where they go (JSON body, inside `preferences`, or query string), so each place is tried in turn. The device values are your OS name, the Node version and `polito-cal-sync`. **Your real password is sent only with a shape the server answered with 401/403.** If none is accepted the script stops and your password is never sent.
+1. `POST /auth/login` with a **fake** username and password, up to 5 times with different request shapes (JSON and form-encoded). The first real answer showed the server needs `device_platform`, `device_version`, `device_model`, and it is unknown where they go (JSON body, inside `preferences`, query string, or form fields), so each place is tried in turn. The device values are your OS name, the Node version and `polito-cal-sync`. **Your real password is sent only with a shape the server answered with 401/403.** If none is accepted the script stops and your password is never sent.
 2. `POST /auth/login` with **your** credentials, once.
 3. `GET /deadlines` for today only: is the token you got enough to read data?
 4. `GET /auth/mfa/status`: what does the server say about MFA for this token?

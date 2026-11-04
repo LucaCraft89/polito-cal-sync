@@ -36,9 +36,9 @@ say('probe 02 - login probe');
 say(`  server:      ${baseUrl}`);
 say(`  User-Agent:  ${USER_AGENT}`);
 say('');
-say('  It will send, one at a time and 1.5 s apart (at most 7 requests):');
+say('  It will send, one at a time and 1.5 s apart (at most 9 requests):');
 say(
-  '    1. POST /auth/login with a FAKE username and password, up to 3 times with different request',
+  '    1. POST /auth/login with a FAKE username and password, up to 5 times with different request',
 );
 say(
   '       shapes (the server needs device fields; where they go is unknown). Fake logins for a user that',
