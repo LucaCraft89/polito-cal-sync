@@ -53,8 +53,9 @@ describe('probe: Sanitizer', () => {
     },
   ];
   it('replaces names, ids, rooms, links, coordinates; keeps dates and enums', () => {
-    const { sanitized, problems } = new Sanitizer().run(sample);
-    const text = JSON.stringify(sanitized);
+    const result = new Sanitizer().run(sample) as { sanitized: unknown; problems: string[] };
+    const { problems } = result;
+    const text = JSON.stringify(result.sanitized);
     for (const real of ['Analisi', 'Rossi', 'Aula', 'example.test', '45.06']) {
       expect(text).not.toContain(real);
     }
