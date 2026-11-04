@@ -48,9 +48,9 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 
 ## E_NOT_CONFIGURED
 
-**What happened:** `sync` was asked to talk to Google, but Google is not connected yet.
-**Why:** the Google connection (OAuth) and the sources are set up in M2/M5; they are not available yet.
-**What to do:** to see the engine work without any account, run `pnpm sync --dry-run --fixture test/fixtures/m1`.
+**What happened:** `sync` or `serve` needs something that is not set up yet: the Google login, the Google calendar, or at least one source (`SOURCE_POLITO_ICS_URLS`). The message says which.
+**Why:** the first-time setup was not finished, or the data folder (`DATA_DIR`) is a different one from the one used during setup.
+**What to do:** follow the steps in `docs/M2-RUNBOOK.md`: `auth google` connects Google and picks the calendar; `SOURCE_POLITO_ICS_URLS` goes in `.env`. To see the engine work without any account, run `pnpm sync --dry-run --fixture test/fixtures/m2`.
 
 ## E_FIXTURE_INVALID
 
@@ -92,13 +92,13 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 
 **What happened:** Google no longer accepts the saved login.
 **Why:** the access was revoked, the password changed, or the Google Cloud app is in "Testing" mode (refresh tokens then expire after 7 days).
-**What to do:** reconnect Google from the wizard. To avoid weekly expiry, publish the OAuth app as "In production" (see `docs/SETUP.md`).
+**What to do:** reconnect with `auth google` (see `docs/M2-RUNBOOK.md`). To avoid weekly expiry, set the OAuth app's publishing status to "In production" in the Google Cloud console (the runbook shows where); an app in "Testing" loses its login every 7 days. The same code appears if the saved login file is damaged.
 
 ## E_GOOGLE_PERMISSION_DENIED
 
 **What happened:** Google refused the request.
 **Why:** the connected account cannot edit the chosen calendar, or the Calendar API is not enabled in your Google Cloud project.
-**What to do:** pick a calendar you own in the wizard, and enable the "Google Calendar API" for the project.
+**What to do:** pick a calendar you own (`auth google --calendar-id ...`), and enable the "Google Calendar API" for the project.
 
 ## E_GOOGLE_CALENDAR_NOT_FOUND
 
@@ -123,3 +123,51 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **What happened:** Google rejected a request with an error we do not have a specific code for.
 **Why:** unknown; the message includes Google's status and reason code.
 **What to do:** run again with `LOG_LEVEL=debug` and open an issue.
+
+## E_GOOGLE_CLIENT_MISSING
+
+**What happened:** the Google OAuth client is not configured, so Google cannot be connected.
+**Why:** `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is empty.
+**What to do:** create an OAuth client of type "Desktop app" in the Google Cloud console and put its id and secret in `.env` (steps in `docs/M2-RUNBOOK.md`). The secret stays on your machine; never paste it into an issue or a chat.
+
+## E_GOOGLE_AUTH_FAILED
+
+**What happened:** the Google sign-in did not finish, so nothing was saved.
+**Why:** one of: you pressed "Cancel" or closed the browser tab; nothing came back within 5 minutes; the redirect did not reach this program (with Docker the port must be published, see the runbook); the sign-in answer did not match this attempt; Google refused the code (wrong client secret); Google did not grant calendar access or did not return a long-lived login (refresh token).
+**What to do:** run `auth google` again and tick the calendar permission when asked. If Google returns no long-lived login, remove this app's access at https://myaccount.google.com/permissions and run it again.
+
+## E_GOOGLE_CALENDAR_IS_PRIMARY
+
+**What happened:** the chosen calendar is the main calendar of the Google account, so it was refused.
+**Why:** this tool writes into a dedicated calendar so it can never mix with your real events. `primary`, or the id that equals your email address, is the main calendar.
+**What to do:** run `auth google` without `--calendar-id` to create the dedicated calendar, or pass the id of a secondary calendar (Google Calendar, Settings, the calendar, "Integrate calendar"). Clear `GOOGLE_CALENDAR_ID` if you set it to your email.
+
+## E_ICS_FEED_FETCH_FAILED
+
+**What happened:** a calendar feed could not be downloaded this time.
+**Why:** no network from the machine or container, the server timed out, or it answered with an error (429/5xx) after several waits. Also used when the server says "not modified" but the saved copy is gone.
+**What to do:** nothing; the next run tries again. The sync still adds and updates events from the feeds that worked, and deletes nothing from this source while one feed is missing. The message names the feed by number and host only; the full URL (which may contain a secret) is never printed.
+
+## E_ICS_FEED_REJECTED
+
+**What happened:** the server refused the feed URL (HTTP 401, 403, 404 or 410).
+**Why:** the URL is wrong, was regenerated so its secret token changed, or the feed was removed.
+**What to do:** copy the feed URL again from the course page and update `SOURCE_POLITO_ICS_URLS` in `.env`. Nothing was deleted because of this.
+
+## E_ICS_FEED_INVALID
+
+**What happened:** the answer is not a readable calendar file, or it is far too large.
+**Why:** the URL points to a web page (for example a login page) instead of a `.ics` feed, or the file is damaged.
+**What to do:** open the URL in a private browser window: it should download a `.ics` file. If it shows a login page, copy the feed URL again. Nothing was deleted because of this.
+
+## E_ICS_FEED_UNSUPPORTED
+
+**What happened:** some events in a feed use a feature this program does not handle (for example a recurrence rule it does not support, a time zone it cannot resolve, an event without UID).
+**Why:** calendar files allow many rarely used features; this program implements the ones students' feeds use and refuses to guess the rest.
+**What to do:** nothing is lost: all other events are synced, and while this problem is in the feed nothing is deleted from the ICS source. Report it in an issue; the message lists event positions and reasons, never event text.
+
+## E_SYNC_ALREADY_RUNNING
+
+**What happened:** another sync is running on the same data folder, so this one did not start.
+**Why:** the scheduled `serve` loop is syncing right now, or a manual `sync` is. Two at once could fight over the same calendar. A crashed run can leave its lock behind for up to 20 minutes.
+**What to do:** wait a minute and try again. If it still says so 20 minutes after a crash, it clears itself.

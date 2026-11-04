@@ -48,7 +48,47 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   GOOGLE_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   GOOGLE_CALENDAR_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  SOURCE_POLITO_ICS_URLS: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .optional()
+      .superRefine((value, ctx) => {
+        // Feed URLs can embed a secret token: say which entry is wrong, never show it.
+        splitList(value ?? '').forEach((entry, i) => {
+          if (!isHttpUrl(entry)) {
+            ctx.addIssue({
+              code: 'custom',
+              message: `entry ${i + 1} is not a valid http(s) URL (entries are separated by commas)`,
+            });
+          }
+        });
+      }),
+  ),
+  STATUS_PORT: z.preprocess(
+    emptyToUndefined,
+    z.coerce
+      .number()
+      .int('must be a whole number')
+      .min(0, 'must be 0 (off) or a port number')
+      .max(65535, 'must be a port number')
+      .default(8787),
+  ),
+  STATUS_BIND: z.preprocess(emptyToUndefined, z.string().default('127.0.0.1')),
 });
+
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function isHttpUrl(s: string): boolean {
+  if (!URL.canParse(s)) return false;
+  const p = new URL(s).protocol;
+  return p === 'http:' || p === 'https:';
+}
 
 export interface Config {
   tz: string;
@@ -57,6 +97,10 @@ export interface Config {
   deleteThreshold: number;
   logLevel: z.infer<typeof envSchema>['LOG_LEVEL'];
   google: { clientId?: string; clientSecret?: string; calendarId?: string };
+  /** Per-course / feed ICS URLs. They may embed a secret token: never log or print them. */
+  icsUrls: string[];
+  /** Local status page: port 0 turns it off. */
+  status: { port: number; bind: string };
 }
 
 /**
@@ -87,6 +131,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     deleteThreshold: v.DELETE_THRESHOLD,
     logLevel: v.LOG_LEVEL,
     google,
+    icsUrls: splitList(v.SOURCE_POLITO_ICS_URLS ?? ''),
+    status: { port: v.STATUS_PORT, bind: v.STATUS_BIND },
   };
 }
 

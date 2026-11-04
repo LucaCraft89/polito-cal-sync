@@ -13,7 +13,6 @@ import { dayMs, parseRRule, recurrenceDays, RRuleUnsupported, ymd, type RRule } 
 import {
   createZoneResolver,
   IcsTimeError,
-  isDateOnly,
   parseDuration,
   parseValue,
   utcCompact,

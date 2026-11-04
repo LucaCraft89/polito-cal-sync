@@ -56,7 +56,7 @@ export function mapGoogleError(err: unknown, calendarGone = false): unknown {
       what: 'Google no longer accepts the saved login.',
       why: 'The access was revoked, the password was changed, or the Google Cloud app is in "Testing" mode (its refresh tokens expire after 7 days).',
       action:
-        'Reconnect Google from the setup wizard. See docs/ERRORS.md for how to avoid weekly expiry.',
+        'Reconnect Google with the "auth google" command (docs/M2-RUNBOOK.md). See docs/ERRORS.md for how to avoid weekly expiry.',
       cause: err,
     });
   }
@@ -69,7 +69,7 @@ export function mapGoogleError(err: unknown, calendarGone = false): unknown {
       what: `Google refused the request (${detail}).`,
       why: 'The connected account cannot edit this calendar, or the Google Calendar API is not enabled in your Google Cloud project.',
       action:
-        'Choose a calendar you own in the wizard and enable the "Google Calendar API" for the project.',
+        'Choose a calendar you own (auth google --calendar-id ...) and enable the "Google Calendar API" for the project.',
       cause: err,
     });
   }
@@ -78,7 +78,7 @@ export function mapGoogleError(err: unknown, calendarGone = false): unknown {
       code: 'E_GOOGLE_CALENDAR_NOT_FOUND',
       what: 'The chosen Google calendar was not found.',
       why: 'It was deleted, or the calendar id in the settings is wrong.',
-      action: 'Choose or create the calendar again in the setup wizard.',
+      action: 'Run "auth google" again to choose or create the calendar.',
       cause: err,
     });
   }

@@ -28,7 +28,7 @@ export class IcsParseError extends Error {
 
 /** Joins folded lines (a line starting with a space or tab continues the previous one). */
 export function unfold(text: string): string[] {
-  const lines = text.replace(/^﻿/, '').split(/\r\n|\n|\r/);
+  const lines = text.replace(/^\u{FEFF}/u, '').split(/\r\n|\n|\r/);
   const out: string[] = [];
   for (const line of lines) {
     if ((line.startsWith(' ') || line.startsWith('\t')) && out.length > 0) {
