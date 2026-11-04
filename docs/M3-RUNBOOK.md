@@ -36,6 +36,17 @@ Read `probe/README.md` once (rules, what each script sends). Then, from the repo
 
 5. Review the checklist at the end of `probe/README.md`, then send back **only**: `probe/out/01-recon.json`, `probe/out/02-login.json`, `probe/out/03-samples-summary.json` and `probe/out/sanitized/*.json`.
 
+## Route B: web-portal SSO (decided with the owner after the app API login stalled)
+
+The app API login (`POST /auth/login`) could not be called correctly (decision 016). The owner's HAR showed the web portal logs in with a plain SAML flow and a password, so `probe/05-idp-login.mjs` tests that route (decision 017). Run it on your machine:
+
+```bash
+git pull
+node probe/05-idp-login.mjs --shift-days 30
+```
+
+Send back `probe/out/05-idp-login.json` and, after the checklist, `probe/out/sanitized/idp-student-data.json`. Change the Polito password first if you have not (it was in a HAR file).
+
 ## Needs owner data (nothing below can be finished without it)
 
 | #   | Open item                                                                                                   | Settled by                                                  | Where the answer goes                                                         |

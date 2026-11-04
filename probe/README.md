@@ -65,6 +65,14 @@ node probe/04-check.mjs
 
 Re-scans the sanitized files, lists the distinct values left so you can eyeball them, and prints the checklist below. It changes nothing.
 
+### 5. Web-portal SSO login (alternative route, asks for your password)
+
+```bash
+node probe/05-idp-login.mjs --shift-days 30
+```
+
+Does what a browser does: opens the portal login, follows the redirects to the university identity provider (`idp.polito.it`), submits your username and password **once**, forwards the SAML answer back to the portal, and makes **one** data call (`getStudentData`, your own schedule data). At most 30 requests, 1.5 s apart, only to `didattica.polito.it` and `idp.polito.it` (a redirect anywhere else stops it). If the identity provider asks for anything else (a code, a passkey), it **stops without answering** and records the form field _names_ and keywords: that is the MFA finding. It records the redirect chain, cookie _names_ and lifetimes (never values) and a sanitized copy of the data in `probe/out/sanitized/idp-student-data.json` (same redaction as step 3). Whether a server counts as a "new device" for the IdP is exactly what this finds out.
+
 ## Before you send anything back (checklist)
 
 - [ ] Open every file in `probe/out/sanitized/`. Do you recognise a real course name, teacher, room, email, matricola, link? If yes: do **not** send it; tell the assistant which field name (not the value) still leaks.
@@ -79,4 +87,5 @@ Paste the contents of the files above (they are small) into the chat, or copy th
 ## Not covered
 
 - Moodle recon (M4).
+- Passkey login and the app API's `sso` mode.
 - `sso` login (`uid` + `key`): how the app gets them is UNVERIFIED and the probe does not try it.

@@ -6,6 +6,8 @@ import { Sanitizer, leaks } from '../probe/lib/sanitize.mjs';
 import { shapeOf, shapeOfBody } from '../probe/lib/shape.mjs';
 import { errorEvidence, fillTemplate, DEFAULT_TEMPLATE } from '../probe/lib/session.mjs';
 import { Http, StopProbe, parseArgs } from '../probe/lib/http.mjs';
+import { CookieJar } from '../probe/lib/cookies.mjs';
+import { parseForms } from '../probe/lib/html.mjs';
 
 // All data here is invented.
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -151,5 +153,43 @@ describe('probe: Http', () => {
         expect((await http.request('GET', '/x')).status).toBe(403); // not requested: just returned
       },
     );
+  });
+});
+
+describe('probe: SSO helpers', () => {
+  it('reads forms, hidden inputs and button names', () => {
+    const forms = parseForms(
+      `<form action="/a?x=1&amp;y=2" method="POST"><input type="hidden" name="csrf" value="v&amp;1"><input name="j_username"><button name="go" value="">x</button></form>`,
+    ) as {
+      action: string;
+      method: string;
+      inputs: { name: string; type: string; value: string }[];
+    }[];
+    expect(forms).toHaveLength(1);
+    expect(forms[0]?.action).toBe('/a?x=1&y=2');
+    expect(forms[0]?.method).toBe('post');
+    expect(forms[0]?.inputs.map((i) => `${i.name}:${i.type}`)).toEqual([
+      'csrf:hidden',
+      'j_username:text',
+      'go:submit',
+    ]);
+    expect(forms[0]?.inputs[0]?.value).toBe('v&1');
+  });
+  it('cookie jar sends by host/path/secure and describes without values', () => {
+    const jar = new CookieJar() as {
+      store(h: string, c: string[]): void;
+      header(u: string): string;
+      describe(): Record<string, unknown>[];
+    };
+    jar.store('idp.example.test', ['A=1; Path=/; Secure; HttpOnly; Max-Age=60', 'B=2; Path=/x']);
+    expect(jar.header('https://idp.example.test/x/y')).toBe('A=1; B=2');
+    expect(jar.header('https://idp.example.test/z')).toBe('A=1');
+    expect(jar.header('http://idp.example.test/z')).toBe('');
+    expect(jar.header('https://other.example.test/')).toBe('');
+    jar.store('idp.example.test', ['A=; Max-Age=0']);
+    expect(jar.header('https://idp.example.test/z')).toBe('');
+    const text = JSON.stringify(jar.describe());
+    expect(text).not.toContain('"value"');
+    expect(text).toContain('"name":"B"');
   });
 });
