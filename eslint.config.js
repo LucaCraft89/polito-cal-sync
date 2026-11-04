@@ -21,6 +21,24 @@ export default tseslint.config(
     files: ['scripts/**', 'src/main.ts', 'src/cli/**'],
     rules: { 'no-console': 'off' },
   },
+  // Owner-run recon scripts: plain Node ESM, not part of the TypeScript project.
+  { files: ['probe/**/*.mjs'], ...tseslint.configs.disableTypeChecked },
+  {
+    files: ['probe/**/*.mjs'],
+    languageOptions: {
+      parserOptions: { projectService: false },
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        AbortSignal: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+    rules: { 'no-console': 'off' },
+  },
   { files: ['eslint.config.js'], ...tseslint.configs.disableTypeChecked },
   prettier,
 );
