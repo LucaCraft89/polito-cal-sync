@@ -10,3 +10,14 @@
 - **Lockout protection** as in 018: `E_POLITO_API_AUTH_REJECTED` writes the latch; no new login until `POLITO_USERNAME`/`POLITO_PASSWORD` change.
 - **Traffic per sync:** one login (13 requests, 1.5 s apart) plus one data request. At the default 60 minutes that is about 14 requests an hour. Reusing the 90-day IdP cookie would cut it to the data request; deliberately not done yet.
 - **Not covered:** seeing the raw formats (the probe's sanitizer used to rewrite dates to `...Z`, hiding the offset-or-not difference; fixed), so the zone-less reading is an inference; other accounts (different degree programmes, working students) may have other sections or types.
+
+## First live dry run (owner, 2026-11-04, `pnpm sync --dry-run`)
+
+Result: `polito complete 70 events` (sections: `carico` 8 items, `orari` 23 -> 23 events, `appelli` 35 -> 35, `agenda` 12 -> 12), **0 issues**, 86 creates in total with the 16 ICS events, 0 deletes. The login took about 20 s and had no MFA step. The booked exam call came out as kind `exam`, the others as `exam_call`; agenda markers came out as deadlines (tuition instalments, plan deadline), lesson/exam period markers, and one booking slot.
+
+Observations to judge, not yet decided:
+
+- **Exam calls are noisy:** 35 `exam_call` events for 8 courses (one course has about 8 calls). Candidate: a switch that keeps only booked exams (and maybe the next call per course). Not built.
+- **Same-slot duplicates:** a few lectures of one course appear twice in the same slot with different ids (probably parallel groups or turns). They are what the portal returns; not filtered.
+- **Time zone assumption:** zone-less exam times were read as Europe/Rome and display as 08:30, 11:00, 14:00 starts, which is plausible. Still to be confirmed by the owner against the portal.
+- Moodle events keep kind `lecture` (decision 009), so the calendar mixes both.

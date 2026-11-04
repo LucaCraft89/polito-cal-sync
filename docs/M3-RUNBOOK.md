@@ -36,6 +36,10 @@ M3's question was whether an unattended server can read the Polito schedule. The
 
 Only: the `polito ...` lines of the dry run, any error code block, and whether the times matched. No raw portal data, no `.env`.
 
+## Status after the first live dry run
+
+Works: login without MFA, 70 events read with no issues, plan of 86 creates and 0 deletes (decision 019). Left: compare a few times with the portal by eye, then a real `pnpm sync` and a second one that must change nothing.
+
 ## Still open
 
 - Reusing the 90-day identity-provider session between runs (fewer password logins; adds a long-lived file in `DATA_DIR`). Decision 018.
