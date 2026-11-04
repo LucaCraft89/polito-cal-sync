@@ -6,7 +6,7 @@
 // NAMES and lifetimes - never cookie values, never your password. The data is sanitized in memory.
 
 import { CookieJar } from './lib/cookies.mjs';
-import { parseForms } from './lib/html.mjs';
+import { parseForms, visibleMessages } from './lib/html.mjs';
 import { USER_AGENT, parseArgs } from './lib/http.mjs';
 import { askHidden, askYesNo } from './lib/prompt.mjs';
 import { writeOut } from './lib/out.mjs';
@@ -54,6 +54,16 @@ const password = await askHidden('Polito password (hidden): ');
 if (!username || !password) {
   say('Empty username or password: nothing was sent.');
   process.exit(1);
+}
+
+// Typing check: only LENGTHS are shown, so a paste or keyboard problem can be noticed before the IdP
+// counts a failed attempt.
+say(
+  `  You typed a username of ${username.length} characters and a password of ${password.length} characters.`,
+);
+if (!(await askYesNo('Are those the lengths you expect? Send the login now?'))) {
+  say('Nothing was sent.');
+  process.exit(0);
 }
 
 const jar = new CookieJar();
@@ -145,6 +155,10 @@ try {
         outcome =
           'login form shown again after the password was sent (credentials rejected, or an extra requirement)';
         report.secondLoginForm = describeForm(login);
+        // What the IdP itself says on the redisplayed form (its text, scrubbed of what was typed).
+        report.secondLoginMessages = visibleMessages(text).map((m) =>
+          [username, password].reduce((acc, secret) => acc.split(secret).join('<redacted>'), m),
+        );
         report.secondLoginKeywords = keywords(text, [
           'errat',
           'invalid',

@@ -36,3 +36,25 @@ export function parseForms(html) {
   }
   return forms;
 }
+
+/**
+ * Visible text of elements that look like messages (class or role says error/alert/warning/invalid/danger),
+ * plus the page title. Server-written text, at most 5 items of 200 characters, for diagnosing a refused form.
+ */
+export function visibleMessages(html) {
+  const strip = (s) =>
+    decode(s.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' '))
+      .replace(/\s+/g, ' ')
+      .trim();
+  const out = [];
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  if (title?.[1]) out.push(`title: ${strip(title[1]).slice(0, 200)}`);
+  for (const m of html.matchAll(
+    /<(div|p|span|li|label|section)\b([^>]*(?:class|role)\s*=\s*"[^"]*(?:error|alert|warning|danger|invalid|message)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi,
+  )) {
+    const text = strip(m[3] ?? '');
+    if (text && !out.includes(text.slice(0, 200))) out.push(text.slice(0, 200));
+    if (out.length >= 6) break;
+  }
+  return out;
+}
