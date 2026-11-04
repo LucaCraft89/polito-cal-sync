@@ -33,6 +33,8 @@ export interface PolitoSourceOptions {
   dataDir: string;
   logger?: Logger;
   now?: () => Date;
+  /** `booked` (default): only exam calls the student booked; `all`: every open call. */
+  examCalls?: 'booked' | 'all';
   /** Test hooks for the login (fetch, allowed hosts, pauses). */
   portal?: PortalOptions;
 }
@@ -151,7 +153,12 @@ export class PolitoPortalSource implements Source {
     } else missing('carico');
     if (lezioni) take('orari', lezioni, mapLectures(lezioni, ctx));
     else missing('orari');
-    if (appelli) take('appelli', appelli, mapExams(appelli, ctx, byShortcode));
+    if (appelli)
+      take(
+        'appelli',
+        appelli,
+        mapExams(appelli, ctx, byShortcode, (this.o.examCalls ?? 'booked') === 'booked'),
+      );
     else missing('appelli');
     if (agenda) take('agenda', agenda, mapAgenda(agenda, ctx));
     else missing('agenda');

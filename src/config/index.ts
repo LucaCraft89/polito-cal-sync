@@ -72,6 +72,20 @@ const envSchema = z.object({
       .default('false')
       .transform((v) => v === 'true'),
   ),
+  POLITO_EXAM_CALLS: z.preprocess(
+    emptyToUndefined,
+    z.enum(['booked', 'all'], 'must be booked or all').default('booked'),
+  ),
+  MOODLE_BASE_URL: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .default('https://moodle.polito.it')
+      .refine(
+        (v) => URL.canParse(v) && /^https?:$/.test(new URL(v).protocol),
+        'must be an http(s) URL',
+      ),
+  ),
   POLITO_USERNAME: z.preprocess(emptyToUndefined, z.string().optional()),
   POLITO_PASSWORD: z.preprocess(emptyToUndefined, z.string().optional()),
   STATUS_PORT: z.preprocess(
@@ -109,7 +123,9 @@ export interface Config {
   /** Per-course / feed ICS URLs. They may embed a secret token: never log or print them. */
   icsUrls: string[];
   /** The Polito student portal source (decision 018). Off by default. The password is a secret: never log it. */
-  polito: { enabled: boolean; username?: string; password?: string };
+  polito: { enabled: boolean; username?: string; password?: string; examCalls: 'booked' | 'all' };
+  /** Host of the Moodle site: events from a feed on this host are labelled as Moodle events. */
+  moodleHost: string;
   /** Local status page: port 0 turns it off. */
   status: { port: number; bind: string };
 }
@@ -143,8 +159,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: v.LOG_LEVEL,
     google,
     icsUrls: splitList(v.SOURCE_POLITO_ICS_URLS ?? ''),
+    moodleHost: new URL(v.MOODLE_BASE_URL).hostname,
     polito: {
       enabled: v.SOURCE_POLITO_PORTAL_ENABLED,
+      examCalls: v.POLITO_EXAM_CALLS,
       ...(v.POLITO_USERNAME !== undefined ? { username: v.POLITO_USERNAME } : {}),
       ...(v.POLITO_PASSWORD !== undefined ? { password: v.POLITO_PASSWORD } : {}),
     },

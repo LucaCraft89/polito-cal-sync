@@ -77,6 +77,7 @@ export function buildSources(ctx: RunContext): {
       password,
       tz: config.tz,
       dataDir: config.dataDir,
+      examCalls: config.polito.examCalls,
       logger,
       ...(deps.now ? { now: deps.now } : {}),
       ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
@@ -92,6 +93,7 @@ function buildIcs(ctx: RunContext): IcsSource {
     urls: config.icsUrls,
     dataDir: config.dataDir,
     tz: config.tz,
+    moodleHost: config.moodleHost,
     logger,
     ...(deps.fetchImpl || deps.sleep
       ? {

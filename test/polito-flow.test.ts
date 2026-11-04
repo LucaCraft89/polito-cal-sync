@@ -76,10 +76,10 @@ describe('Polito portal source inside a real run', () => {
     const h = harness(world({ data }));
     const first = await h.run(['sync'], ON);
     expect(first.code).toBe(0);
-    expect(live(h.api)).toHaveLength(1 + 7);
+    expect(live(h.api)).toHaveLength(1 + 6);
     const second = await h.run(['sync'], ON);
     expect(second.code).toBe(0);
-    expect(second.out).toContain('8 unchanged');
+    expect(second.out).toContain('7 unchanged');
     expect(second.out).toContain('created 0, updated 0, deleted 0');
   });
 

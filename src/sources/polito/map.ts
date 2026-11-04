@@ -158,15 +158,37 @@ export function mapLectures(items: readonly unknown[], ctx: MapContext): Mapped 
 /** `status: "booked"` is the only value seen; it (and only it) makes an exam call kind `exam`. */
 export const EXAM_BOOKED_STATUS = 'booked';
 
+/** Booked = the status says so, or the call carries a booking id (both held for the one booked call in the sample). */
+const isBooked = (e: {
+  status?: string | null | undefined;
+  idBooking?: number | null | undefined;
+}): boolean =>
+  e.status === EXAM_BOOKED_STATUS || (typeof e.idBooking === 'number' && e.idBooking > 0);
+
 export function mapExams(
   items: readonly unknown[],
   ctx: MapContext,
   courseIdByShortcode: ReadonlyMap<string, string>,
+  /** Keep only calls the student booked. Every item is still validated (an unknown shape stays an issue). */
+  onlyBooked = false,
 ): Mapped {
   return build('appelli', items, (raw) => {
     const p = examSchema.safeParse(raw);
     if (!p.success) return p.error;
     const e = p.data;
+    if (onlyBooked && !isBooked(e)) {
+      // validated above; left out on purpose
+      if (!toIso(e.examStartsAt, ctx))
+        return new z.ZodError([
+          {
+            code: 'custom',
+            path: ['examStartsAt'],
+            message: 'unreadable time',
+            input: e.examStartsAt,
+          },
+        ]);
+      return [];
+    }
     const start = toIso(e.examStartsAt, ctx);
     const end = e.examEndsAt ? toIso(e.examEndsAt, ctx) : undefined;
     if (!start)
@@ -197,7 +219,7 @@ export function mapExams(
     return [
       {
         ...base(`exam:${e.id}`),
-        kind: e.status === EXAM_BOOKED_STATUS ? 'exam' : 'exam_call',
+        kind: isBooked(e) ? 'exam' : 'exam_call',
         title: clip(e.courseName, 300),
         start,
         ...(end ? { end } : {}),

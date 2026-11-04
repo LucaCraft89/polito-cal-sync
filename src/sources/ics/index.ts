@@ -1,6 +1,7 @@
 import { toUserError, UserError } from '../../util/errors.js';
 import type { Logger } from 'pino';
 import type { CanonicalEvent, Source, SourceResult } from '../types.js';
+import { toCanonical } from '../../sync/mapper.js';
 import { eventsFromIcs } from './events.js';
 import { feedLabel, fetchFeed, FeedCache, type FetchOptions } from './fetch.js';
 import { IcsParseError } from './parse.js';
@@ -25,6 +26,8 @@ export interface IcsSourceOptions {
   /** How far back and ahead occurrences are kept. Default 366 days each way. */
   pastDays?: number;
   futureDays?: number;
+  /** Events from a feed on this host are Moodle events: kind `moodle` and a visible "[Moodle] " title prefix. */
+  moodleHost?: string;
   fetchOptions?: FetchOptions;
   now?: () => Date;
   logger?: Logger;
@@ -34,6 +37,22 @@ export interface IcsSourceOptions {
 }
 
 const DAY_MS = 86_400_000;
+
+const MOODLE_PREFIX = '[Moodle] ';
+
+function hostOf(url: string): string | undefined {
+  return URL.canParse(url) ? new URL(url).hostname : undefined;
+}
+
+/** Same event, labelled as coming from Moodle (the label is part of the title, so it is in the hash). */
+function asMoodle(e: CanonicalEvent): CanonicalEvent {
+  // toCanonical ignores the old hash and computes a new one for the labelled content.
+  return toCanonical({
+    ...e,
+    kind: 'moodle',
+    title: e.title.startsWith(MOODLE_PREFIX) ? e.title : `${MOODLE_PREFIX}${e.title}`.slice(0, 300),
+  });
+}
 
 /**
  * Reads the configured calendar feeds one by one. The result is `complete` ONLY if every feed
@@ -79,6 +98,8 @@ export class IcsSource implements Source {
           });
         }
         feed.commit();
+        const isMoodle = this.o.moodleHost !== undefined && hostOf(url) === this.o.moodleHost;
+        if (isMoodle) parsed.events = parsed.events.map(asMoodle);
         for (const e of parsed.events) if (!events.has(e.sourceId)) events.set(e.sourceId, e);
         const report: FeedReport = {
           label,

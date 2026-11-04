@@ -43,6 +43,16 @@ function describeCanonical(e: CanonicalEvent, tz: string): string {
   return `${clip(when(e.start, e.end, e.allDay, tz), 27)} ${clip(`[${e.kind}]`, 12)} ${clip(e.title, 36)} ${e.source}:${e.sourceId}`;
 }
 
+/** Extra line under an event (--details): where and what, so look-alike events can be told apart. */
+function describeDetails(e: CanonicalEvent): string {
+  const bits = [
+    e.course ? `course ${e.course}` : undefined,
+    e.location ? `at ${e.location}` : undefined,
+    e.description ? `note: ${e.description.replace(/\s+/g, ' ').slice(0, 120)}` : undefined,
+  ].filter(Boolean);
+  return `            ${bits.length > 0 ? bits.join(' · ') : '(no course, place or note)'}`;
+}
+
 function describeManaged(m: ManagedEvent, tz: string): string {
   const dateOnly = m.start !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(m.start);
   const w = m.start ? when(m.start, undefined, dateOnly, tz) : '(unknown time)';
@@ -58,6 +68,8 @@ export interface FormatContext {
   banner?: string;
   /** One line per feed / source detail, printed under "Sources". */
   sourceNotes?: readonly string[];
+  /** Print course, place and note under each created/updated event (--details). */
+  details?: boolean;
 }
 
 /** Human-readable plan / result. Contains event titles: print it to the user's terminal only, never to logs. */
@@ -81,8 +93,15 @@ export function formatReport(report: SyncReport, ctx: FormatContext): string {
   for (const note of ctx.sourceNotes ?? []) lines.push(`    ${note}`);
 
   lines.push('', report.options.dryRun ? 'Plan' : 'Plan (as computed before applying)');
-  for (const c of plan.creates) lines.push(`  + create  ${describeCanonical(c.event, ctx.tz)}`);
-  for (const c of plan.patches) lines.push(`  ~ update  ${describeCanonical(c.event, ctx.tz)}`);
+  for (const [sign, word, list] of [
+    ['+', 'create', plan.creates],
+    ['~', 'update', plan.patches],
+  ] as const) {
+    for (const c of list) {
+      lines.push(`  ${sign} ${word.padEnd(7)} ${describeCanonical(c.event, ctx.tz)}`);
+      if (ctx.details) lines.push(describeDetails(c.event));
+    }
+  }
   for (const d of plan.deletes) lines.push(`  - delete  ${describeManaged(d.remote, ctx.tz)}`);
   lines.push(`  = ${plan.unchanged} unchanged`);
   if (plan.untouched.length > 0) {

@@ -40,6 +40,10 @@ Only: the `polito ...` lines of the dry run, any error code block, and whether t
 
 Works: login without MFA, 70 events read with no issues, plan of 86 creates and 0 deletes (decision 019). Left: compare a few times with the portal by eye, then a real `pnpm sync` and a second one that must change nothing.
 
+## After the owner's review (decision 020)
+
+Exam calls are now booked-only by default; Moodle events carry a `[Moodle]` prefix; `pnpm sync --dry-run --details` shows course, place and note under each event. Open: how to tell the student's squad from the others (needs the distinguishing field, see 020).
+
 ## Still open
 
 - Reusing the 90-day identity-provider session between runs (fewer password logins; adds a long-lived file in `DATA_DIR`). Decision 018.

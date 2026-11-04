@@ -67,6 +67,7 @@ Commands
                   deleted event id (decision 002/010). Needs "auth google" first.
   sync            Copy the schedule into the Google calendar.
     --dry-run       Print the plan; write nothing (no calendar changes, no history).
+    --details       Under each planned event also print its course, place and note.
     --force         Allow a run that deletes more than DELETE_THRESHOLD of our events.
     --fixture DIR   Developer mode: use the files in DIR (sources.json or .ics, and
                     calendar.json) and an in-memory calendar instead of real accounts
@@ -117,6 +118,7 @@ async function syncCommand(
 ): Promise<number> {
   const values = parseOptions('sync', args, {
     'dry-run': { type: 'boolean', default: false },
+    details: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     fixture: { type: 'string' },
   });
@@ -133,6 +135,7 @@ async function syncCommand(
         tz: config.tz,
         calendarId: out.calendarId,
         results: out.results,
+        details: values.details === true,
         sourceNotes: [
           ...incompleteNotes(out.feeds),
           ...out.sourceErrors.map((e) => `${e.source}: ${e.error.code}`),

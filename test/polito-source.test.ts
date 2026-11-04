@@ -13,7 +13,12 @@ const fixture = (): { data: Record<string, unknown> } & Record<string, unknown> 
     readFileSync(new URL('./fixtures/polito-portal/student-data.json', import.meta.url), 'utf8'),
   ) as never;
 
-function source(data: unknown, tz = 'Europe/Rome', extra: object = {}) {
+function source(
+  data: unknown,
+  tz = 'Europe/Rome',
+  extra: object = {},
+  examCalls?: 'booked' | 'all',
+) {
   const w = world({ data });
   const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polsrc-'));
   const s = new PolitoPortalSource({
@@ -21,6 +26,7 @@ function source(data: unknown, tz = 'Europe/Rome', extra: object = {}) {
     password: PASS,
     tz,
     dataDir,
+    ...(examCalls ? { examCalls } : {}),
     now: () => new Date('2026-11-04T10:00:00Z'),
     portal: opts(w.fetchImpl, extra),
   });
@@ -42,7 +48,7 @@ describe('zonedToUtcIso', () => {
 
 describe('Polito portal source: mapping', () => {
   it('maps lectures, exam calls, booked exams, agenda markers and slots; is complete', async () => {
-    const { s } = source(fixture());
+    const { s } = source(fixture(), 'Europe/Rome', {}, 'all');
     const r = await s.fetch();
     expect(r.complete).toBe(true);
     const by = new Map(r.events.map((e) => [e.sourceId, e]));
@@ -91,8 +97,36 @@ describe('Polito portal source: mapping', () => {
     });
   });
 
+  it('keeps only booked exams by default; every call is still checked', async () => {
+    const d = fixture();
+    const r = await source(d).s.fetch();
+    expect(r.complete).toBe(true);
+    const ids = r.events.map((e) => e.sourceId);
+    expect(ids).toContain('exam:7002');
+    expect(ids).not.toContain('exam:7001');
+    expect(r.events.filter((e) => e.sourceId.startsWith('exam:'))).toHaveLength(1);
+    expect(r.events).toHaveLength(6);
+
+    // a call that is not booked but unreadable is still an issue: nothing may be deleted on a guess
+    (d.data['appelli'] as { data: Record<string, unknown>[] }).data[0]!['examStartsAt'] =
+      'tomorrow';
+    const bad = await source(d).s.fetch();
+    expect(bad.complete).toBe(false);
+  });
+
+  it('a call with a booking id counts as booked even without the status text', async () => {
+    const d = fixture();
+    const calls = (d.data['appelli'] as { data: Record<string, unknown>[] }).data;
+    calls[0] = { ...calls[0], idBooking: 99 };
+    delete calls[1]!['status'];
+    const r = await source(d).s.fetch();
+    expect(
+      r.events.filter((e) => e.sourceId.startsWith('exam:') && e.kind === 'exam'),
+    ).toHaveLength(2);
+  });
+
   it('reads zone-less times in the configured zone, and exposes course names', async () => {
-    const { s } = source(fixture(), 'America/New_York');
+    const { s } = source(fixture(), 'America/New_York', {}, 'all');
     const r = await s.fetch();
     expect(r.events.find((e) => e.sourceId === 'exam:7001')?.start).toBe(
       '2027-02-14T19:30:00.000Z',
