@@ -1,0 +1,89 @@
+{
+  "calendarId": "fixture-polito-calendar",
+  "managed": [
+    {
+      "source": "ics",
+      "sourceId": "fx-analisi-1109",
+      "kind": "lecture",
+      "title": "Analisi matematica I",
+      "start": "2026-11-09T08:30:00+01:00",
+      "end": "2026-11-09T10:00:00+01:00",
+      "location": "Aula 5T"
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-fisica-1110",
+      "kind": "lecture",
+      "title": "Fisica I",
+      "start": "2026-11-10T10:00:00+01:00",
+      "end": "2026-11-10T12:00:00+01:00",
+      "location": "Aula 12"
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-analisi-1111",
+      "kind": "lecture",
+      "title": "Analisi matematica I",
+      "start": "2026-11-11T08:30:00+01:00",
+      "end": "2026-11-11T10:00:00+01:00",
+      "location": "Aula 5T"
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-chimica-1105",
+      "kind": "lecture",
+      "title": "Chimica (lezione annullata)",
+      "start": "2026-11-05T09:00:00+01:00",
+      "end": "2026-11-05T11:00:00+01:00",
+      "location": "Aula 2"
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-booking-1118",
+      "kind": "booking",
+      "title": "Prenotazione laboratorio",
+      "start": "2026-11-18T14:00:00+01:00",
+      "end": "2026-11-18T16:00:00+01:00",
+      "location": "Laboratorio 3"
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-deadline-1120",
+      "kind": "deadline",
+      "title": "Scadenza iscrizione appello",
+      "start": "2026-11-20",
+      "allDay": true
+    },
+    {
+      "source": "ics",
+      "sourceId": "fx-exam-0115",
+      "kind": "exam_call",
+      "title": "Appello Analisi matematica I",
+      "start": "2027-01-15T09:00:00+01:00",
+      "end": "2027-01-15T12:00:00+01:00",
+      "location": "Aula 1"
+    },
+    {
+      "source": "moodle",
+      "sourceId": "fx-assign-old",
+      "kind": "moodle",
+      "title": "Quiz Informatica",
+      "start": "2026-11-06",
+      "allDay": true
+    }
+  ],
+  "foreign": [
+    {
+      "id": "fxforeign0001",
+      "summary": "Dentista",
+      "start": { "dateTime": "2026-11-12T15:00:00Z" },
+      "end": { "dateTime": "2026-11-12T16:00:00Z" }
+    },
+    {
+      "id": "fxforeign0002",
+      "summary": "Compleanno di Marta",
+      "start": { "dateTime": "2026-11-14T17:00:00Z" },
+      "end": { "dateTime": "2026-11-14T18:00:00Z" }
+    }
+  ]
+}
