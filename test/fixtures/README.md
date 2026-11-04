@@ -14,4 +14,4 @@ pnpm sync --dry-run --fixture test/fixtures/m1
 pnpm sync --dry-run --fixture test/fixtures/m1-wipe
 ```
 
-Real samples recorded from the Polito API belong here too, from M3 on, after the owner sanitized them.
+- `polito/` — **invented** Polito API answers derived from the spec summary (see its README). Real samples recorded by the owner's probe, once sanitized, go in `polito/real/`.
