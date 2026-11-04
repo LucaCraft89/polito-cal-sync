@@ -1,12 +1,15 @@
-# One command to start: `docker compose up -d`, then open http://localhost:8787 (wizard arrives in M5).
+# First time: follow docs/M2-RUNBOOK.md (auth google, then `docker compose up -d`).
+# http://localhost:8787/status shows the last sync (the wizard arrives in M5).
 services:
   polito-cal-sync:
     build: .
     image: polito-cal-sync:local
     container_name: polito-cal-sync
-    # M0/M1: `serve` is not implemented yet and exits with a clear message, so do not restart-loop.
-    # Switch to `unless-stopped` when M2 lands the serve loop.
-    restart: 'no'
+    # `serve` keeps running even when a sync fails (it logs why and retries at the next interval),
+    # so restarts only happen after a crash or an invalid .env.
+    restart: unless-stopped
+    # Lets a sync in progress finish after SIGTERM (docker stop).
+    stop_grace_period: 30s
     env_file:
       - path: .env
         required: false

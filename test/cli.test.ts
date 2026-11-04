@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../src/cli/index.js';
 
 const M1 = new URL('./fixtures/m1', import.meta.url).pathname;
+const M2 = new URL('./fixtures/m2', import.meta.url).pathname;
 const WIPE = new URL('./fixtures/m1-wipe', import.meta.url).pathname;
 
 function run(argv: string[], env: NodeJS.ProcessEnv = {}) {
@@ -78,12 +79,28 @@ describe('cli: sync (apply) on fixture data', () => {
   });
 });
 
+describe('cli: sync --dry-run on the sanitized ICS fixture (real parser, in-memory calendar)', () => {
+  it('creates, updates the moved lecture, deletes the cancelled ones, leaves foreign events alone', async () => {
+    const r = await run(['sync', '--dry-run', '--fixture', M2]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('polito.ics: 15 event(s), 2 cancelled left out');
+    expect(r.out).toContain('would create 7, update 1, delete 2, keep 7');
+    expect(r.out).toMatch(/~ update .*Analisi matematica I/);
+    expect(r.out).toMatch(/- delete .*Chimica/);
+    expect(r.out).toContain('(all day)');
+    expect(r.out).not.toContain('Dentista');
+    expect(r.err).toBe('');
+  });
+});
+
 describe('cli: errors are coded, explained, and free of stack traces', () => {
   const cases: [string[], string, NodeJS.ProcessEnv?][] = [
     [['sync'], 'E_NOT_CONFIGURED'],
     [['sync', '--bogus'], 'E_USAGE'],
     [['frobnicate'], 'E_USAGE'],
-    [['serve'], 'E_NOT_IMPLEMENTED'],
+    [['auth', 'google'], 'E_GOOGLE_CLIENT_MISSING'],
+    [['auth', 'nope'], 'E_USAGE'],
+    [['verify-google'], 'E_GOOGLE_CLIENT_MISSING'],
     [['doctor'], 'E_NOT_IMPLEMENTED'],
     [['sync', '--fixture', '/nonexistent/dir'], 'E_FIXTURE_INVALID'],
     [['sync', '--dry-run', '--fixture', M1], 'E_CONFIG_INVALID', { TZ: 'Not/AZone' }],

@@ -20,6 +20,7 @@ RUN pnpm build \
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     DATA_DIR=/data \
+    STATUS_BIND=0.0.0.0 \
     TZ=Europe/Rome
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

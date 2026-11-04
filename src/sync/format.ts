@@ -56,6 +56,8 @@ export interface FormatContext {
   results: readonly SourceResult[];
   /** Printed first, e.g. the fixture-mode warning. */
   banner?: string;
+  /** One line per feed / source detail, printed under "Sources". */
+  sourceNotes?: readonly string[];
 }
 
 /** Human-readable plan / result. Contains event titles: print it to the user's terminal only, never to logs. */
@@ -76,6 +78,7 @@ export function formatReport(report: SyncReport, ctx: FormatContext): string {
     );
   }
   if (ctx.results.length === 0) lines.push('  (none)');
+  for (const note of ctx.sourceNotes ?? []) lines.push(`    ${note}`);
 
   lines.push('', report.options.dryRun ? 'Plan' : 'Plan (as computed before applying)');
   for (const c of plan.creates) lines.push(`  + create  ${describeCanonical(c.event, ctx.tz)}`);

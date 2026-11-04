@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { chmodSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserError } from '../util/errors.js';
 
@@ -69,6 +69,43 @@ export class StateStore {
 
   static fileIn(dataDir: string): string {
     return join(dataDir, 'state.db');
+  }
+
+  /**
+   * Read-only health probe for the Docker healthcheck: unlike `open` it never changes anything,
+   * in particular it does not mark a run that is in progress as interrupted.
+   */
+  static probe(path: string): void {
+    if (!existsSync(path)) {
+      StateStore.open(path).close();
+      return;
+    }
+    try {
+      const db = new Database(path, { readonly: true });
+      try {
+        const version = db.pragma('user_version', { simple: true }) as number;
+        if (version > SCHEMA_VERSION) {
+          throw new UserError({
+            code: 'E_STATE_DB_SCHEMA_NEWER',
+            what: 'The state database was written by a newer version of this program.',
+            why: 'An older version was started on a data folder used by a newer one.',
+            action: 'Upgrade to the newer version, or use a separate data folder.',
+          });
+        }
+      } finally {
+        db.close();
+      }
+    } catch (cause) {
+      if (cause instanceof UserError) throw cause;
+      throw new UserError({
+        code: 'E_STATE_DB_OPEN_FAILED',
+        what: 'The sync history database could not be opened.',
+        why: 'The file is corrupt, locked by another running instance, or the disk is full.',
+        action:
+          'Make sure only one instance runs. If the file is corrupt, move state.db out of the data folder: the next run rebuilds from the calendar, nothing is lost.',
+        cause,
+      });
+    }
   }
 
   /** `path` may be ':memory:' for tests. */
