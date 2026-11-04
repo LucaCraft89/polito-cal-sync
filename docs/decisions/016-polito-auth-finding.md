@@ -1,5 +1,7 @@
 # 016 Polito API auth finding
 
+> **Superseded by decisions 017 and 018:** the app API login was never made to work; the portal SSO route works. This file stays as the record of what was tried.
+
 **Status: PARTIAL. First real probe run by the owner, 2026-11-04** (`01-recon.json`, `02-login.json`, `03-samples-summary.json`). Login was never evaluated, so the MFA and token questions are still open.
 
 **Findings (observed):**

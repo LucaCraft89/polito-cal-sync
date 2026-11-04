@@ -36,7 +36,7 @@ Read `probe/README.md` once (rules, what each script sends). Then, from the repo
 
 5. Review the checklist at the end of `probe/README.md`, then send back **only**: `probe/out/01-recon.json`, `probe/out/02-login.json`, `probe/out/03-samples-summary.json` and `probe/out/sanitized/*.json`.
 
-## Route B: web-portal SSO (decided with the owner after the app API login stalled)
+## Route B: web-portal SSO (WORKS: decision 018; what is left is below) (decided with the owner after the app API login stalled)
 
 The app API login (`POST /auth/login`) could not be called correctly (decision 016). The owner's HAR showed the web portal logs in with a plain SAML flow and a password, so `probe/05-idp-login.mjs` tests that route (decision 017). Run it on your machine:
 
@@ -76,3 +76,14 @@ If item 2 or 3 turns out negative, the Polito API source is closed as "not feasi
 - Login answered 401: do not retry quickly (accounts can lock). Check the username (matricola) and password in the Polito web portal first.
 - You typed the password wrong: the script does not retry; just run it again later.
 - You think a file leaked something: delete `probe/out/` (it is git-ignored and local) and tell the assistant the field name, not the value.
+
+## Where M3 stands after the third SSO run
+
+Done and verified on the owner's account: headless login (no MFA step), one data call, lifetimes of the IdP cookies. Done and tested with fakes: the login client, the lockout latch.
+
+Still needs the owner:
+
+1. Send `probe/out/sanitized/idp-student-data.json` (after the checklist in `probe/README.md`; it was written to `sanitized/`, not `needs-review/`, so the automatic checks passed). It is needed for the **date formats** and **values of enums** (`type`, `agenda` kinds) before the mapper can be written without guessing.
+2. Decide where credentials live: proposed `POLITO_USERNAME` / `POLITO_PASSWORD` in `.env`.
+3. Decide on reusing the 90-day IdP session cookie (decision 018).
+4. After the mapper exists: a live `pnpm sync --dry-run` on the owner's machine.

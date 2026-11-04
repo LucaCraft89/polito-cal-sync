@@ -37,6 +37,8 @@ export const ERROR_CODES = [
   'E_POLITO_API_AUTH_REJECTED',
   'E_POLITO_API_FETCH_FAILED',
   'E_POLITO_API_UNEXPECTED_DATA',
+  'E_POLITO_LOGIN_EXTRA_STEP',
+  'E_POLITO_LOGIN_BLOCKED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

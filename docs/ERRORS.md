@@ -195,3 +195,15 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **What happened:** an answer from the Polito API did not have the shape this program expects, so those items were left out and the run is marked incomplete.
 **Why:** Polito changed its API, or the program's description of a field was a guess that the real data does not match.
 **What to do:** nothing is deleted while this lasts. Run the probe again (`docs/M3-RUNBOOK.md`) and open an issue with the sanitized summary (never raw data) so the description can be corrected. The message names the endpoint and the field, never the content.
+
+## E_POLITO_LOGIN_EXTRA_STEP
+
+**What happened:** the university login (`idp.polito.it`) asked for something beyond username and password, such as a code or a second factor, and this program cannot answer it.
+**Why:** multi-factor authentication applies to this account, or this server counts as a new device.
+**What to do:** nothing was answered or deleted; the ICS source keeps working. Your browser may have been a trusted device: that trust does not carry over to this program. Report it with `probe/05-idp-login.mjs` output (field names only).
+
+## E_POLITO_LOGIN_BLOCKED
+
+**What happened:** the Polito login is paused because these exact credentials were refused earlier.
+**Why:** retrying a refused password every hour could get the account locked.
+**What to do:** check the credentials in a browser, fix `POLITO_USERNAME` / `POLITO_PASSWORD` in `.env`. The pause ends by itself as soon as they change.
