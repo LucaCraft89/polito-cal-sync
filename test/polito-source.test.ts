@@ -1,186 +1,241 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { PolitoApi } from '../src/sources/polito/client.js';
-import { PolitoApiSource } from '../src/sources/polito/index.js';
-import { UserError } from '../src/util/errors.js';
+import { PolitoPortalSource } from '../src/sources/polito/index.js';
+import { formatUserError } from '../src/util/errors.js';
+import { zonedToUtcIso } from '../src/util/zone.js';
+import { html, LOGIN_FORM, opts, PASS, USER, world } from './support/portal-world.js';
 
-// All data in test/fixtures/polito is INVENTED from the spec-derived field table (see its README).
-const fixture = (name: string): unknown =>
-  JSON.parse(readFileSync(new URL(`./fixtures/polito/${name}.json`, import.meta.url), 'utf8'));
-const NOW = new Date('2026-11-04T10:00:00Z');
+// Invented data shaped like the owner's real sample (see test/fixtures/polito-portal/README.md).
+const fixture = (): { data: Record<string, unknown> } & Record<string, unknown> =>
+  JSON.parse(
+    readFileSync(new URL('./fixtures/polito-portal/student-data.json', import.meta.url), 'utf8'),
+  ) as never;
 
-type Answers = Record<string, unknown>;
-
-function fakeApi(overrides: Answers = {}) {
-  const answers: Answers = {
-    '/v2/courses': fixture('courses'),
-    '/lectures': fixture('lectures'),
-    '/exams': fixture('exams'),
-    '/bookings': fixture('bookings'),
-    '/deadlines': fixture('deadlines'),
-    '/courses/101/assignments': fixture('assignments-101'),
-    '/courses/C-202/assignments': fixture('assignments-C-202'),
-    ...overrides,
-  };
-  const calls: { path: string; query: Record<string, string> }[] = [];
-  const api: PolitoApi = {
-    get: (path, query = {}) => {
-      calls.push({ path, query });
-      if (!(path in answers)) return Promise.reject(new Error(`unexpected call ${path}`));
-      const a = answers[path];
-      return typeof a === 'function'
-        ? Promise.resolve().then(a as () => never)
-        : Promise.resolve(a);
-    },
-  };
-  return { api, calls };
+function source(data: unknown, tz = 'Europe/Rome', extra: object = {}) {
+  const w = world({ data });
+  const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polsrc-'));
+  const s = new PolitoPortalSource({
+    username: USER,
+    password: PASS,
+    tz,
+    dataDir,
+    now: () => new Date('2026-11-04T10:00:00Z'),
+    portal: opts(w.fetchImpl, extra),
+  });
+  return { s, w, dataDir };
 }
 
-const source = (api: PolitoApi) => new PolitoApiSource({ api, now: () => NOW });
-const fetchError = (code: 'E_POLITO_API_FETCH_FAILED' | 'E_POLITO_API_AUTH_REJECTED') => () => {
-  throw new UserError({ code, what: 'x', why: 'y', action: 'z' });
-};
-
-describe('Polito API source: mapping (invented, spec-derived fixtures)', () => {
-  it('maps every endpoint, is complete, and uses one request per endpoint', async () => {
-    const { api, calls } = fakeApi();
-    const s = source(api);
-    const r = await s.fetch();
-    expect(r.complete).toBe(true);
-    expect(calls.map((c) => c.path)).toEqual([
-      '/v2/courses',
-      '/lectures',
-      '/exams',
-      '/bookings',
-      '/deadlines',
-      '/courses/101/assignments',
-      '/courses/C-202/assignments',
-    ]);
-    const byId = new Map(r.events.map((e) => [e.sourceId, e]));
-    expect(byId.get('lecture:1')).toMatchObject({
-      kind: 'lecture',
-      title: 'Alpha lecture',
-      start: '2026-11-10T08:30:00.000Z',
-      end: '2026-11-10T10:00:00.000Z',
-      location: 'Room 1',
-      course: 'polito:101',
-      source: 'polito',
-    });
-    expect(byId.get('lecture:2')?.location).toBe('Room 2');
-    expect(byId.get('exam:E1')).toMatchObject({ kind: 'exam_call', location: 'Room 3' });
-    // No "booked" status values are known yet, so no entry becomes kind "exam" (see fields.ts).
-    expect(byId.get('exam:E2')?.kind).toBe('exam_call');
-    expect(byId.get('exam:E1:booking-closes')).toMatchObject({
-      kind: 'deadline',
-      start: '2026-11-28T21:59:00.000Z',
-    });
-    expect(byId.has('exam:E2:booking-closes')).toBe(false);
-    expect(byId.get('booking:9')).toMatchObject({ kind: 'booking', location: 'Lab 5' });
-    expect(byId.get('deadline:4')).toMatchObject({
-      kind: 'deadline',
-      allDay: true,
-      start: '2026-11-20',
-    });
-    expect(byId.get('assignment:101:7')).toMatchObject({
-      kind: 'assignment',
-      course: 'polito:101',
-    });
-    expect(r.events).toHaveLength(9);
-    expect(s.lastReport.every((x) => x.status === 'ok')).toBe(true);
+describe('zonedToUtcIso', () => {
+  it('reads zone-less times in the given zone, winter and summer', () => {
+    expect(zonedToUtcIso('2027-02-14T14:30:00', 'Europe/Rome')).toBe('2027-02-14T13:30:00.000Z');
+    expect(zonedToUtcIso('2027-07-07T08:30:00', 'Europe/Rome')).toBe('2027-07-07T06:30:00.000Z');
+    expect(zonedToUtcIso('2027-02-14T14:30', 'America/New_York')).toBe('2027-02-14T19:30:00.000Z');
+    expect(zonedToUtcIso('not a time', 'Europe/Rome')).toBeUndefined();
   });
-
-  it('asks for a bounded window with plain dates and derives stable ids when the API gives none', async () => {
-    const { api, calls } = fakeApi();
-    const r1 = await source(api).fetch();
-    expect(calls.find((c) => c.path === '/lectures')?.query).toEqual({
-      fromDate: '2026-08-06',
-      toDate: '2027-05-03',
-    });
-    const r2 = await source(fakeApi().api).fetch();
-    const derived = r1.events.filter((e) => e.sourceId.startsWith('deadline:h:'));
-    expect(derived).toHaveLength(1);
-    expect(r2.events.map((e) => e.sourceId).sort()).toEqual(
-      r1.events.map((e) => e.sourceId).sort(),
-    );
-  });
-
-  it('keeps the course key out of the hash: same content, other course, same hash', async () => {
-    const a = (await source(fakeApi().api).fetch()).events.find((e) => e.sourceId === 'lecture:1');
-    const altered = fixture('lectures') as { data: Record<string, unknown>[] };
-    altered.data[0] = { ...altered.data[0], courseId: 999 };
-    const b = (await source(fakeApi({ '/lectures': altered }).api).fetch()).events.find(
-      (e) => e.sourceId === 'lecture:1',
-    );
-    expect(b?.course).toBe('polito:999');
-    expect(b?.hash).toBe(a?.hash);
+  it('handles the spring gap and the autumn overlap like decision 009', () => {
+    expect(zonedToUtcIso('2027-03-28T02:30:00', 'Europe/Rome')).toBe('2027-03-28T01:30:00.000Z');
+    expect(zonedToUtcIso('2026-10-25T02:30:00', 'Europe/Rome')).toBe('2026-10-25T00:30:00.000Z');
   });
 });
 
-describe('Polito API source: fail closed', () => {
-  it('a field that does not match marks the run incomplete but keeps the understood items', async () => {
-    const lectures = fixture('lectures') as { data: Record<string, unknown>[] };
-    const broken = { data: [{ ...lectures.data[0], title: undefined }, lectures.data[1]] };
-    const s = source(fakeApi({ '/lectures': broken }).api);
+describe('Polito portal source: mapping', () => {
+  it('maps lectures, exam calls, booked exams, agenda markers and slots; is complete', async () => {
+    const { s } = source(fixture());
     const r = await s.fetch();
-    expect(r.complete).toBe(false);
-    expect(r.events.some((e) => e.sourceId === 'lecture:1')).toBe(false);
-    expect(r.events.some((e) => e.sourceId === 'lecture:2')).toBe(true);
-    const report = s.lastReport.find((x) => x.endpoint === 'lectures');
-    expect(report?.error?.code).toBe('E_POLITO_API_UNEXPECTED_DATA');
-    // Messages carry positions and field names, not content.
-    expect(report?.issues.join(' ')).toContain('lectures #1');
-    expect(report?.issues.join(' ')).not.toContain('Alpha');
-  });
-
-  it('a renamed time field (wrong guess) maps nothing and is incomplete', async () => {
-    const renamed = [{ id: 1, title: 'T', beginsAt: '2026-11-10T08:30:00Z' }];
-    const r = await source(fakeApi({ '/lectures': renamed }).api).fetch();
-    expect(r.complete).toBe(false);
-    expect(r.events.some((e) => e.kind === 'lecture')).toBe(false);
-  });
-
-  it('a date without a zone or a plain date where a date-time is expected is rejected', async () => {
-    const r = await source(
-      fakeApi({ '/lectures': [{ id: 1, title: 'T', startsAt: '2026-11-10T08:30:00' }] }).api,
-    ).fetch();
-    expect(r.complete).toBe(false);
-    expect(r.events.filter((e) => e.kind === 'lecture')).toHaveLength(0);
-  });
-
-  it('an answer that is not a list is a failure of that endpoint, not an empty list', async () => {
-    const s = source(fakeApi({ '/bookings': { bookings: [] } }).api);
-    const r = await s.fetch();
-    expect(r.complete).toBe(false);
-    expect(s.lastReport.find((x) => x.endpoint === 'bookings')?.status).toBe('failed');
-  });
-
-  it('an empty list is a legitimate answer', async () => {
-    const r = await source(fakeApi({ '/bookings': [] }).api).fetch();
     expect(r.complete).toBe(true);
+    const by = new Map(r.events.map((e) => [e.sourceId, e]));
+    expect(r.events).toHaveLength(7);
+
+    expect(by.get('lecture:9001')).toMatchObject({
+      kind: 'lecture',
+      title: 'Invented Analysis',
+      start: '2026-12-09T08:00:00.000Z',
+      end: '2026-12-09T09:30:00.000Z',
+      location: 'Room 9',
+      course: 'polito:5001',
+    });
+    expect(by.get('lecture:9001')?.description).toBeUndefined();
+    expect(by.get('lecture:9002')?.description).toBe('Exercises');
+
+    // zone-less exam times are read as Europe/Rome wall time
+    expect(by.get('exam:7001')).toMatchObject({
+      kind: 'exam_call',
+      start: '2027-02-14T13:30:00.000Z',
+      end: '2027-02-14T16:00:00.000Z',
+      location: 'Room 1, Room 2',
+      course: 'polito:5001',
+    });
+    expect(by.get('exam:7001')?.description).toContain('Booking closes: 2027-02-12T13:00:00.000Z');
+    expect(by.get('exam:7001')?.description).not.toContain('Booking opens');
+    expect(by.get('exam:7002')).toMatchObject({
+      kind: 'exam',
+      start: '2027-07-07T06:30:00.000Z',
+      course: 'polito:5002',
+    });
+    expect(by.get('exam:7002')?.description).toContain('Bring ID');
+    expect(by.get('exam:7002')?.description).toContain('Booking opens: 2026-11-01T08:00:00.000Z');
+
+    expect(by.get('agenda:3001')).toMatchObject({
+      kind: 'deadline',
+      allDay: true,
+      start: '2026-12-20',
+    });
+    expect(by.get('agenda:3002')).toMatchObject({ kind: 'lecture', allDay: true });
+    expect(by.get('agenda:3003')).toMatchObject({
+      kind: 'booking',
+      start: '2026-12-24T12:00:00.000Z',
+      end: '2026-12-24T15:00:00.000Z',
+      location: 'Lab 5',
+    });
   });
 
-  it('a login or rate-limit failure stops all further requests and is incomplete', async () => {
-    for (const code of ['E_POLITO_API_AUTH_REJECTED', 'E_POLITO_API_FETCH_FAILED'] as const) {
-      const { api, calls } = fakeApi({ '/exams': fetchError(code) });
-      const s = source(api);
+  it('reads zone-less times in the configured zone, and exposes course names', async () => {
+    const { s } = source(fixture(), 'America/New_York');
+    const r = await s.fetch();
+    expect(r.events.find((e) => e.sourceId === 'exam:7001')?.start).toBe(
+      '2027-02-14T19:30:00.000Z',
+    );
+    expect(s.courseNames.get('polito:5001')).toBe('Invented Analysis');
+  });
+
+  it('ignores sections it does not need', async () => {
+    const d = fixture();
+    d.data['career'] = 'anything at all';
+    d.data['applicazioni'] = { data: [{ weird: true }] };
+    expect((await source(d).s.fetch()).complete).toBe(true);
+  });
+});
+
+describe('Polito portal source: fail closed', () => {
+  const brokenCases: [string, (d: ReturnType<typeof fixture>) => void][] = [
+    ['a missing section', (d) => void delete d.data['agenda']],
+    ['a section that is not a list', (d) => void (d.data['appelli'] = { data: { oops: 1 } })],
+    [
+      'a renamed required field',
+      (d) => {
+        const l = (d.data['orari'] as { data: { lezioni: Record<string, unknown>[] } }).data
+          .lezioni;
+        l[0] = { ...l[0], startsAt: undefined, beginsAt: '2026-12-09T09:00:00+01:00' };
+      },
+    ],
+    [
+      'a time that is not a time',
+      (d) => {
+        (d.data['appelli'] as { data: Record<string, unknown>[] }).data[0]!['examStartsAt'] =
+          'tomorrow';
+      },
+    ],
+    [
+      'an agenda item of an unknown shape',
+      (d) => {
+        (d.data['agenda'] as { data: unknown[] }).data.push({ id: 1, something: 'else' });
+      },
+    ],
+    [
+      'the same id twice',
+      (d) => {
+        const l = (d.data['orari'] as { data: { lezioni: unknown[] } }).data.lezioni;
+        l.push(l[0]);
+      },
+    ],
+  ];
+  for (const [name, break_] of brokenCases) {
+    it(`${name} marks the run incomplete but keeps what was understood`, async () => {
+      const d = fixture();
+      break_(d);
+      const { s } = source(d);
       const r = await s.fetch();
       expect(r.complete).toBe(false);
-      expect(calls.map((c) => c.path)).toEqual(['/v2/courses', '/lectures', '/exams']);
-      expect(r.events.some((e) => e.sourceId === 'lecture:1')).toBe(true); // earlier results are kept
-      expect(s.lastReport.filter((x) => x.status === 'not-run').length).toBeGreaterThan(0);
-      expect(s.lastReport.find((x) => x.endpoint === 'exams')?.error?.code).toBe(code);
-    }
+      expect(r.events.length).toBeGreaterThan(0);
+      expect(s.lastReport.some((x) => x.error?.code === 'E_POLITO_API_UNEXPECTED_DATA')).toBe(true);
+    });
+  }
+
+  it('a document without success:true is rejected whole', async () => {
+    const d = fixture();
+    d['success'] = false;
+    const r = await source(d).s.fetch();
+    expect(r).toMatchObject({ complete: false, events: [] });
   });
 
-  it('never throws, even for non-UserErrors', async () => {
-    const { api } = fakeApi({
-      '/v2/courses': () => {
-        throw new Error('boom');
-      },
+  it('error messages carry positions and field names, never content', async () => {
+    const d = fixture();
+    (d.data['appelli'] as { data: Record<string, unknown>[] }).data[0]!['examStartsAt'] =
+      'Secret Title';
+    const { s } = source(d);
+    await s.fetch();
+    const text = s.lastReport.map((x) => x.error && formatUserError(x.error)).join('\n');
+    expect(text).toContain('appelli #1');
+    expect(text).not.toContain('Secret Title');
+    expect(text).not.toContain('Invented Analysis');
+  });
+});
+
+describe('Polito portal source: login problems', () => {
+  it('a refused login is incomplete, never throws, and pauses further attempts until the credentials change', async () => {
+    const w = world({ data: fixture(), idpAnswer: () => html(LOGIN_FORM) });
+    const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polsrc-'));
+    const make = (password: string) =>
+      new PolitoPortalSource({
+        username: USER,
+        password,
+        tz: 'Europe/Rome',
+        dataDir,
+        portal: opts(w.fetchImpl),
+      });
+    const first = make('wrong-PASS-word');
+    expect(await first.fetch()).toMatchObject({ complete: false, events: [] });
+    expect(first.lastReport[0]?.error?.code).toBe('E_POLITO_API_AUTH_REJECTED');
+    const requestsAfterFirst = w.log.length;
+
+    const second = make('wrong-PASS-word');
+    expect(await second.fetch()).toMatchObject({ complete: false });
+    expect(second.lastReport[0]?.error?.code).toBe('E_POLITO_LOGIN_BLOCKED');
+    expect(w.log.length).toBe(requestsAfterFirst); // not one request more
+
+    const third = make('another-PASS-word'); // changed credentials: tried again
+    await third.fetch();
+    expect(w.log.length).toBeGreaterThan(requestsAfterFirst);
+  });
+
+  it('an MFA step is reported, not answered', async () => {
+    const w = world({
+      idpAnswer: () => html('<form action="/mfa" method="post"><input name="otp_code"></form>'),
     });
-    const s = source(api);
-    const r = await s.fetch();
-    expect(r).toMatchObject({ complete: false, events: [] });
-    expect(s.lastReport[0]?.error?.code).toBe('E_INTERNAL');
+    const s = new PolitoPortalSource({
+      username: USER,
+      password: PASS,
+      tz: 'Europe/Rome',
+      dataDir: mkdtempSync(join(tmpdir(), 'pcs-polsrc-')),
+      portal: opts(w.fetchImpl),
+    });
+    expect(await s.fetch()).toMatchObject({ complete: false, events: [] });
+    expect(s.lastReport[0]?.error?.code).toBe('E_POLITO_LOGIN_EXTRA_STEP');
+    expect(w.log.filter((l) => l.method === 'POST')).toHaveLength(1);
+  });
+
+  it('an outage is incomplete and does not block future attempts', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polsrc-'));
+    const down = (() => Promise.resolve(new Response(null, { status: 503 }))) as typeof fetch;
+    const s = new PolitoPortalSource({
+      username: USER,
+      password: PASS,
+      tz: 'Europe/Rome',
+      dataDir,
+      portal: opts(down),
+    });
+    expect(await s.fetch()).toMatchObject({ complete: false });
+    expect(s.lastReport[0]?.error?.code).toBe('E_POLITO_API_FETCH_FAILED');
+    const w = world({ data: fixture() });
+    const again = new PolitoPortalSource({
+      username: USER,
+      password: PASS,
+      tz: 'Europe/Rome',
+      dataDir,
+      portal: opts(w.fetchImpl),
+    });
+    expect((await again.fetch()).complete).toBe(true);
   });
 });

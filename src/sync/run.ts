@@ -3,8 +3,8 @@ import { ensureDataDir, type Config } from '../config/index.js';
 import { OwnedCalendar } from '../google/calendar.js';
 import { connectGoogle, type GoogleRuntime } from '../google/runtime.js';
 import { IcsSource, type FeedReport } from '../sources/ics/index.js';
-import { UnavailableAuth, type PolitoApi } from '../sources/polito/client.js';
-import { PolitoApiSource } from '../sources/polito/index.js';
+import { PolitoPortalSource } from '../sources/polito/index.js';
+import type { PortalOptions } from '../sources/polito/portal/login.js';
 import type { Source, SourceResult } from '../sources/types.js';
 import { toUserError, UserError } from '../util/errors.js';
 import { runSync, type SyncReport } from './engine.js';
@@ -19,8 +19,8 @@ export interface RuntimeDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Pause between two ICS feeds (ms). */
   pauseBetweenFeedsMs?: number;
-  /** Replaces the Polito API client (tests). Production uses the one that is not able to log in yet. */
-  politoApi?: PolitoApi;
+  /** Test hooks for the Polito portal login (fetch, allowed hosts, pauses). */
+  politoPortal?: PortalOptions;
 }
 
 export interface RunContext {
@@ -38,11 +38,11 @@ export interface RunOutput {
   sourceErrors: { source: string; error: UserError }[];
 }
 
-/** The sources switched on by the configuration: the ICS feeds and, if enabled, the Polito API. */
+/** The sources switched on by the configuration: the ICS feeds and, if enabled, the Polito portal. */
 export function buildSources(ctx: RunContext): {
   sources: Source[];
   ics?: IcsSource;
-  polito?: PolitoApiSource;
+  polito?: PolitoPortalSource;
 } {
   const { config, logger, deps = {} } = ctx;
   if (config.icsUrls.length === 0 && !config.polito.enabled) {
@@ -60,16 +60,26 @@ export function buildSources(ctx: RunContext): {
     ics = buildIcs(ctx);
     sources.push(ics);
   }
-  let polito: PolitoApiSource | undefined;
+  let polito: PolitoPortalSource | undefined;
   if (config.polito.enabled) {
-    // Until the probe settles how an unattended login works, the only auth is one that says so (E_POLITO_API_NOT_READY).
-    const api: PolitoApi = deps.politoApi ?? {
-      get: () => new UnavailableAuth().token().then(() => undefined),
-    };
-    polito = new PolitoApiSource({
-      api,
+    const { username, password } = config.polito;
+    if (!username || !password) {
+      throw new UserError({
+        code: 'E_NOT_CONFIGURED',
+        what: 'The Polito portal source is switched on, but the login is not set.',
+        why: 'POLITO_USERNAME and/or POLITO_PASSWORD are empty.',
+        action:
+          'Put your university username and password in .env (git-ignored; never share the file), or set SOURCE_POLITO_PORTAL_ENABLED=false. See docs/M3-RUNBOOK.md.',
+      });
+    }
+    polito = new PolitoPortalSource({
+      username,
+      password,
+      tz: config.tz,
+      dataDir: config.dataDir,
       logger,
       ...(deps.now ? { now: deps.now } : {}),
+      ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
     });
     sources.push(polito);
   }

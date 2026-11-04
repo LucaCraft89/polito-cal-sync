@@ -76,6 +76,9 @@ describe('probe: Sanitizer', () => {
     const s = new Sanitizer({ shiftDays: 30 });
     expect(s.walk({ d: '2026-11-10' })).toEqual({ d: '2026-12-10' });
     expect(s.walk({ d: '2026-11-10T08:30:00Z' })).toEqual({ d: '2026-12-10T08:30:00Z' });
+    // the format is kept: a zone-less time stays zone-less, an offset stays an offset
+    expect(s.walk({ d: '2026-11-10T08:30:00' })).toEqual({ d: '2026-12-10T08:30:00' });
+    expect(s.walk({ d: '2026-11-10T08:30:00+01:00' })).toEqual({ d: '2026-12-10T08:30:00+01:00' });
   });
   it('flags leftovers: typed secrets, emails, tokens, student ids', () => {
     expect(leaks('{"a":"hello s123456"}')).toContain('Italian student id (s + 6 digits)');

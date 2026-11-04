@@ -1,0 +1,106 @@
+{
+  "success": true,
+  "msg": "ok",
+  "msgClass": "success",
+  "data": {
+    "carico": {
+      "data": [
+        { "id": 5001, "name": "Invented Analysis", "shortcode": "01AAAAA", "cfu": 8 },
+        { "id": 5002, "name": "Invented Physics", "shortcode": "01BBBBB", "cfu": 6 }
+      ]
+    },
+    "orari": {
+      "data": {
+        "stato": "A",
+        "lezioni": [
+          {
+            "id": 9001,
+            "courseId": 5001,
+            "startsAt": "2026-12-09T09:00:00+01:00",
+            "endsAt": "2026-12-09T10:30:00+01:00",
+            "type": "Lezione",
+            "description": "",
+            "courseName": "Invented Analysis",
+            "url": "/x",
+            "place": { "name": "Room 9", "siteId": "S1" },
+            "virtualClassrooms": []
+          },
+          {
+            "id": 9002,
+            "courseId": 5002,
+            "startsAt": "2026-12-10T15:00:00+01:00",
+            "endsAt": "2026-12-10T16:30:00+01:00",
+            "type": "Lezione",
+            "description": "Exercises",
+            "courseName": "Invented Physics",
+            "place": { "name": "Lab 2" },
+            "virtualClassrooms": []
+          }
+        ]
+      }
+    },
+    "appelli": {
+      "data": [
+        {
+          "id": 7001,
+          "idBooking": -1,
+          "courseShortcode": "01AAAAA",
+          "courseName": "Invented Analysis",
+          "type": "Written exam",
+          "classrooms": "Room 1, Room 2",
+          "notes": "",
+          "bookingStartsAt": "",
+          "bookingEndsAt": "2027-02-12T14:00:00",
+          "examStartsAt": "2027-02-14T14:30:00",
+          "examEndsAt": "2027-02-14T17:00:00"
+        },
+        {
+          "id": 7002,
+          "idBooking": 123456,
+          "status": "booked",
+          "courseShortcode": "01BBBBB",
+          "courseName": "Invented Physics",
+          "type": "Oral exam",
+          "classrooms": "Room 3",
+          "notes": "Bring ID",
+          "bookingStartsAt": "2026-11-01T09:00:00",
+          "bookingEndsAt": "2026-11-20T13:00:00",
+          "examStartsAt": "2027-07-07T08:30:00",
+          "examEndsAt": "2027-07-07T12:00:00"
+        }
+      ]
+    },
+    "agenda": {
+      "data": [
+        {
+          "id": 3001,
+          "name": "Tuition deadline",
+          "title": "Tuition deadline",
+          "date": "2026-12-20",
+          "ISOdate": "2026-12-19T23:00:00Z",
+          "type": "TASSE",
+          "url": ""
+        },
+        {
+          "id": 3002,
+          "name": "Lessons start",
+          "title": "Lessons start",
+          "date": "2027-02-08",
+          "ISOdate": "2027-02-07T23:00:00Z",
+          "type": "LEZIONI",
+          "url": ""
+        },
+        {
+          "id": 3003,
+          "title": "Invented lab slot",
+          "type": "BOOKING",
+          "d_ini_turno_ts": "2026-12-24T12:00:00Z",
+          "d_fin_turno_ts": "2026-12-24T15:00:00Z",
+          "place": { "name": "Lab 5", "url": null }
+        }
+      ]
+    },
+    "virtualClassroom": { "data": [] },
+    "career": { "data": { "matricola": "x" } }
+  }
+}

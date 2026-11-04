@@ -14,4 +14,4 @@ pnpm sync --dry-run --fixture test/fixtures/m1
 pnpm sync --dry-run --fixture test/fixtures/m1-wipe
 ```
 
-- `polito/` — **invented** Polito API answers derived from the spec summary (see its README). Real samples recorded by the owner's probe, once sanitized, go in `polito/real/`.
+- `polito-portal/` — **invented** portal answer shaped like the owner's real sample (see its README).

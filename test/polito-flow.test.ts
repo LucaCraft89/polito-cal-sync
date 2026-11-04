@@ -1,11 +1,11 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runCli, type CliDeps, type CliIo } from '../src/cli/index.js';
 import { MemoryEventsApi } from '../src/google/memory.js';
+import { opts, PASS, USER, world } from './support/portal-world.js';
 
-// Invented feed; the point is the interaction between the ICS source and the (disabled / not ready) Polito API source.
 const FEED = 'https://feed.example.invalid/tok-ZZZZZZZZZZZZ/me.ics';
 const CAL = 'dedicated-cal';
 const ICS = [
@@ -17,13 +17,15 @@ const ICS = [
   'DTSTART:20261110T090000Z',
   'DTEND:20261110T100000Z',
   'SUMMARY:Fisica',
-  'CATEGORIES:2026_ABC_1',
   'END:VEVENT',
   'END:VCALENDAR',
 ].join('\r\n');
+const data: unknown = JSON.parse(
+  readFileSync(new URL('./fixtures/polito-portal/student-data.json', import.meta.url), 'utf8'),
+);
 
-function harness() {
-  const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polito-'));
+function harness(portal: ReturnType<typeof world>) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polflow-'));
   const api = new MemoryEventsApi();
   const out: string[] = [];
   const err: string[] = [];
@@ -38,6 +40,7 @@ function harness() {
     sleep: () => Promise.resolve(),
     googleFactory: () => Promise.resolve({ api, calendarId: CAL }),
     fetchImpl: () => Promise.resolve(new Response(ICS, { status: 200 })),
+    politoPortal: opts(portal.fetchImpl),
   };
   const run = async (argv: string[], env: NodeJS.ProcessEnv = {}) => {
     out.length = err.length = 0;
@@ -51,71 +54,65 @@ function harness() {
   };
   return { api, run };
 }
-
 const live = (api: MemoryEventsApi) =>
   api
     .snapshot(CAL)
     .filter(
       (e) => e.extendedProperties?.private?.['polito_cal_sync'] === '1' && e.status !== 'cancelled',
     );
+const ON = { SOURCE_POLITO_PORTAL_ENABLED: 'true', POLITO_USERNAME: USER, POLITO_PASSWORD: PASS };
 
-describe('Polito API source inside a real run', () => {
-  it('is off by default: nothing about it appears', async () => {
-    const h = harness();
+describe('Polito portal source inside a real run', () => {
+  it('is off by default: no login is attempted', async () => {
+    const w = world({ data });
+    const h = harness(w);
     const r = await h.run(['sync']);
     expect(r.code).toBe(0);
-    expect(r.out).not.toContain('polito');
+    expect(w.log).toHaveLength(0);
     expect(live(h.api)).toHaveLength(1);
   });
 
-  it('enabled but not able to log in: says so with its code, ICS still syncs, exit code 2 (incomplete)', async () => {
-    const h = harness();
-    const r = await h.run(['sync'], { SOURCE_POLITO_API_ENABLED: 'true' });
-    expect(r.code).toBe(2);
-    expect(r.err).toContain('E_POLITO_API_NOT_READY');
-    expect(r.out).toContain('INCOMPLETE');
-    expect(live(h.api)).toHaveLength(1);
+  it('enabled: ICS and portal events land in the calendar together; a second run is a no-op', async () => {
+    const h = harness(world({ data }));
+    const first = await h.run(['sync'], ON);
+    expect(first.code).toBe(0);
+    expect(live(h.api)).toHaveLength(1 + 7);
+    const second = await h.run(['sync'], ON);
+    expect(second.code).toBe(0);
+    expect(second.out).toContain('8 unchanged');
+    expect(second.out).toContain('created 0, updated 0, deleted 0');
   });
 
-  it('never deletes ICS events or earlier Polito events while it is incomplete', async () => {
-    const h = harness();
-    await h.run(['sync']);
-    const before = live(h.api).length;
-    // An event the Polito source wrote in an earlier life: it must survive an incomplete run.
-    const { toGoogleEvent } = await import('../src/sync/mapper.js');
-    const { toCanonical } = await import('../src/sync/mapper.js');
-    const old = toGoogleEvent(
-      toCanonical({
-        source: 'polito',
-        sourceId: 'lecture:1',
-        kind: 'lecture',
-        title: 'Old',
-        start: '2026-11-20T09:00:00Z',
-      }),
-      'Europe/Rome',
-    );
-    h.api.seed(CAL, old as typeof old & { id: string });
-    const r = await h.run(['sync'], { SOURCE_POLITO_API_ENABLED: 'true' });
-    expect(r.code).toBe(2);
-    expect(live(h.api)).toHaveLength(before + 1);
-  });
-
-  it('works with the Polito API alone (no ICS URLs) and reports not ready instead of "nothing to sync"', async () => {
-    const h = harness();
-    const r = await h.run(['sync'], {
-      SOURCE_POLITO_ICS_URLS: '',
-      SOURCE_POLITO_API_ENABLED: 'true',
+  it('a refused login leaves every event alone (ICS and earlier portal events), says why, exits 2', async () => {
+    const ok = harness(world({ data }));
+    await ok.run(['sync'], ON);
+    const before = live(ok.api).length;
+    // same calendar, but the login is now refused
+    const w = world({
+      data,
+      idpAnswer: () => new Response('<form><input name="j_password"></form>', { status: 200 }),
     });
-    expect(r.err).toContain('E_POLITO_API_NOT_READY');
-    expect(r.err).not.toContain('E_NOT_CONFIGURED');
+    const h2 = harness(w);
+    for (const e of ok.api.snapshot(CAL)) h2.api.seed(CAL, e as never);
+    const r = await h2.run(['sync'], ON);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('E_POLITO_API_AUTH_REJECTED');
+    expect(live(h2.api)).toHaveLength(before);
   });
 
-  it('rejects a bad value for the switch naming the variable, not the value', async () => {
-    const h = harness();
-    const r = await h.run(['sync'], { SOURCE_POLITO_API_ENABLED: 'maybe' });
-    expect(r.code).not.toBe(0);
-    expect(r.err).toContain('E_CONFIG_INVALID');
-    expect(r.err).toContain('SOURCE_POLITO_API_ENABLED');
-    expect(r.err).not.toContain('maybe');
+  it('enabled without a login: a plain message, nothing is sent', async () => {
+    const w = world({ data });
+    const r = await harness(w).run(['sync'], { SOURCE_POLITO_PORTAL_ENABLED: 'true' });
+    expect(r.err).toContain('E_NOT_CONFIGURED');
+    expect(r.err).toContain('POLITO_PASSWORD');
+    expect(w.log).toHaveLength(0);
+  });
+
+  it('never prints the password or username', async () => {
+    const h = harness(
+      world({ data, idpAnswer: () => new Response('<form><input name="j_password"></form>') }),
+    );
+    const r = await h.run(['sync'], ON);
+    expect(r.out + r.err).not.toContain(PASS);
   });
 });

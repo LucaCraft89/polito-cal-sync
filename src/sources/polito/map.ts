@@ -1,52 +1,95 @@
-import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import { toCanonical } from '../../sync/mapper.js';
+import { zonedToUtcIso } from '../../util/zone.js';
+import { isValidDateOnly } from '../types.js';
 import type { CanonicalEvent, EventDraft } from '../types.js';
-import { EXAM_BOOKED_STATUSES, FIELDS } from './fields.js';
-import {
-  assignmentSchema,
-  bookingSchema,
-  deadlineSchema,
-  examSchema,
-  lectureSchema,
-} from './schemas.js';
-import type { z } from 'zod';
 
 export const POLITO_SOURCE_ID = 'polito';
+/** The one JSON document the student portal serves after login (decision 018). */
+export const STUDENT_DATA_PATH = '/pls/portal30/sviluppo.studente.getStudentData';
+
+/**
+ * Field names come from the owner's real sanitized sample (2026-11-04), not from guesses. What the
+ * sample did NOT show is marked UNVERIFIED: the time zone of zone-less times (read as the configured TZ),
+ * and what other `status` / agenda `type` values exist.
+ */
 
 export interface Mapped {
   events: CanonicalEvent[];
-  /** Positions and field names only, never content. A non-empty list makes the endpoint incomplete. */
+  /** Positions and field names only, never content. A non-empty list makes the result incomplete. */
   issues: string[];
 }
 
-type Item = Record<string, unknown>;
-const get = (item: Item, name: string): unknown => item[name];
-const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
-/** Ids are strings or whole numbers (the schemas already normalised them to strings). */
-const idText = (v: unknown): string =>
-  typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
+const idValue = z.union([z.string().min(1), z.number().int()]).transform(String);
+const text = z.string().trim().min(1);
+const optText = z.string().optional().nullable();
+const DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?$/;
+/** A date-time with an offset or Z (lectures, bookings) or WITHOUT a zone (exam calls). */
+const dateTime = z.string().regex(DATETIME, 'must be an ISO date-time');
+const place = z.looseObject({ name: optText }).nullish();
 
-/** Course key in the `polito:` key space (decision 013). Opaque. */
-export const courseKeyOf = (courseId: unknown): string | undefined =>
-  courseId === null || courseId === undefined || courseId === ''
-    ? undefined
-    : `polito:${idText(courseId)}`;
+const lectureSchema = z.looseObject({
+  id: idValue,
+  courseId: idValue.nullish(),
+  startsAt: dateTime,
+  endsAt: dateTime.nullish(),
+  courseName: text,
+  description: optText,
+  place,
+});
 
-/** Best-effort place text. The real shape is unknown, so unknown shapes simply give no location. */
-export function locationText(value: unknown): string | undefined {
-  if (typeof value === 'string') return value.trim() || undefined;
-  if (Array.isArray(value)) {
-    const names = value.map(locationText).filter((x): x is string => !!x);
-    return names.length > 0 ? names.slice(0, 3).join(', ') : undefined;
-  }
-  if (value && typeof value === 'object') return locationText((value as Item)['name']);
-  return undefined;
+const examSchema = z.looseObject({
+  id: idValue,
+  courseShortcode: optText,
+  courseName: text,
+  type: optText,
+  classrooms: optText,
+  notes: optText,
+  status: optText,
+  idBooking: z.number().nullish(),
+  bookingStartsAt: optText,
+  bookingEndsAt: optText,
+  examStartsAt: dateTime,
+  examEndsAt: dateTime.nullish(),
+});
+
+const carichiSchema = z.looseObject({
+  id: idValue,
+  name: optText,
+  shortcode: optText,
+});
+
+const datedAgendaSchema = z.looseObject({
+  id: idValue,
+  title: text,
+  date: z.string().refine(isValidDateOnly, 'must be a YYYY-MM-DD date'),
+  type: optText,
+});
+
+const slotAgendaSchema = z.looseObject({
+  id: idValue,
+  title: text,
+  type: optText,
+  d_ini_turno_ts: dateTime,
+  d_fin_turno_ts: dateTime.nullish(),
+  place,
+});
+
+export interface MapContext {
+  tz: string;
 }
 
-/** Stable id for items the API gives no id for: a hash of what identifies them. */
-function derivedId(...parts: string[]): string {
-  return `h:${createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)}`;
+/** Offset/Z times are kept; zone-less times are read in the configured zone. */
+function toIso(value: string, ctx: MapContext): string | undefined {
+  if (/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return value;
+  return zonedToUtcIso(value, ctx.tz);
 }
+
+const clip = (s: string, n: number): string => s.slice(0, n);
+const clean = (s: string | null | undefined): string | undefined => {
+  const t = s?.trim();
+  return t ? t : undefined;
+};
 
 function problems(error: z.ZodError): string {
   return error.issues
@@ -55,24 +98,23 @@ function problems(error: z.ZodError): string {
     .join('; ');
 }
 
-function build<T>(
-  endpoint: string,
+function build(
+  section: string,
   items: readonly unknown[],
-  schema: z.ZodType<T>,
-  toDraft: (item: Item) => EventDraft[],
+  toDrafts: (item: unknown) => EventDraft[] | z.ZodError,
 ): Mapped {
   const events: CanonicalEvent[] = [];
   const issues: string[] = [];
   items.forEach((raw, i) => {
-    const parsed = schema.safeParse(raw);
-    if (!parsed.success) {
-      issues.push(`${endpoint} #${i + 1}: ${problems(parsed.error)}`);
+    const drafts = toDrafts(raw);
+    if (drafts instanceof z.ZodError) {
+      issues.push(`${section} #${i + 1}: ${problems(drafts)}`);
       return;
     }
     try {
-      for (const draft of toDraft(parsed.data as Item)) events.push(toCanonical(draft));
+      for (const d of drafts) events.push(toCanonical(d));
     } catch {
-      issues.push(`${endpoint} #${i + 1}: its fields could not be turned into a calendar event`);
+      issues.push(`${section} #${i + 1}: its fields could not be turned into a calendar event`);
     }
   });
   return { events, issues };
@@ -80,121 +122,167 @@ function build<T>(
 
 const base = (sourceId: string) => ({ source: POLITO_SOURCE_ID, sourceId });
 
-export function mapLectures(items: readonly unknown[]): Mapped {
-  const f = FIELDS.lecture;
-  return build('lectures', items, lectureSchema, (it) => {
-    const loc = locationText(get(it, f.location));
-    const course = courseKeyOf(get(it, f.course));
-    const end = str(get(it, f.end));
+/** course key: the portal's numeric course id, in the `polito:` key space (decision 013). */
+const courseKey = (id: string | null | undefined): string | undefined =>
+  id ? `polito:${id}` : undefined;
+
+export function mapLectures(items: readonly unknown[], ctx: MapContext): Mapped {
+  return build('orari.lezioni', items, (raw) => {
+    const p = lectureSchema.safeParse(raw);
+    if (!p.success) return p.error;
+    const l = p.data;
+    const start = toIso(l.startsAt, ctx);
+    const end = l.endsAt ? toIso(l.endsAt, ctx) : undefined;
+    if (!start)
+      return new z.ZodError([
+        { code: 'custom', path: ['startsAt'], message: 'unreadable time', input: l.startsAt },
+      ]);
+    const location = clean(l.place?.name);
+    const description = clean(l.description);
+    const course = courseKey(l.courseId);
     return [
       {
-        ...base(`lecture:${String(get(it, f.id))}`),
+        ...base(`lecture:${l.id}`),
         kind: 'lecture',
-        title: String(get(it, f.title)).slice(0, 300),
-        start: String(get(it, f.start)),
+        title: clip(l.courseName, 300),
+        start,
         ...(end ? { end } : {}),
-        ...(loc ? { location: loc } : {}),
+        ...(location ? { location } : {}),
+        ...(description ? { description } : {}),
         ...(course ? { course } : {}),
       },
     ];
   });
 }
 
-export function mapExams(items: readonly unknown[]): Mapped {
-  const f = FIELDS.exam;
-  return build('exams', items, examSchema, (it) => {
-    const id = String(get(it, f.id));
-    const title = String(get(it, f.title)).slice(0, 300);
-    const status = str(get(it, f.status));
-    const loc = locationText(get(it, f.location));
-    const course = courseKeyOf(get(it, f.course));
-    const end = str(get(it, f.end));
-    const closes = str(get(it, f.bookingCloses));
-    const kind =
-      status !== undefined && EXAM_BOOKED_STATUSES.includes(status) ? 'exam' : 'exam_call';
-    const common = { ...(loc ? { location: loc } : {}), ...(course ? { course } : {}) };
-    const drafts: EventDraft[] = [
+/** `status: "booked"` is the only value seen; it (and only it) makes an exam call kind `exam`. */
+export const EXAM_BOOKED_STATUS = 'booked';
+
+export function mapExams(
+  items: readonly unknown[],
+  ctx: MapContext,
+  courseIdByShortcode: ReadonlyMap<string, string>,
+): Mapped {
+  return build('appelli', items, (raw) => {
+    const p = examSchema.safeParse(raw);
+    if (!p.success) return p.error;
+    const e = p.data;
+    const start = toIso(e.examStartsAt, ctx);
+    const end = e.examEndsAt ? toIso(e.examEndsAt, ctx) : undefined;
+    if (!start)
+      return new z.ZodError([
+        {
+          code: 'custom',
+          path: ['examStartsAt'],
+          message: 'unreadable time',
+          input: e.examStartsAt,
+        },
+      ]);
+    const closes = clean(e.bookingEndsAt)
+      ? toIso(clean(e.bookingEndsAt) as string, ctx)
+      : undefined;
+    const opens = clean(e.bookingStartsAt)
+      ? toIso(clean(e.bookingStartsAt) as string, ctx)
+      : undefined;
+    const lines = [
+      clean(e.type),
+      clean(e.notes),
+      opens ? `Booking opens: ${opens}` : undefined,
+      closes ? `Booking closes: ${closes}` : undefined,
+    ].filter((x): x is string => !!x);
+    const location = clean(e.classrooms);
+    const shortcode = clean(e.courseShortcode);
+    const courseId = shortcode ? courseIdByShortcode.get(shortcode) : undefined;
+    const course = courseKey(courseId);
+    return [
       {
-        ...base(`exam:${id}`),
-        kind,
-        title,
-        start: String(get(it, f.start)),
+        ...base(`exam:${e.id}`),
+        kind: e.status === EXAM_BOOKED_STATUS ? 'exam' : 'exam_call',
+        title: clip(e.courseName, 300),
+        start,
         ...(end ? { end } : {}),
-        ...common,
-        ...(status ? { description: `Status: ${status}` } : {}),
+        ...(location ? { location } : {}),
+        ...(lines.length ? { description: lines.join('\n') } : {}),
+        ...(course ? { course } : {}),
       },
     ];
-    if (closes) {
-      drafts.push({
-        ...base(`exam:${id}:booking-closes`),
-        kind: 'deadline',
-        title: `Booking closes: ${title}`.slice(0, 300),
-        start: closes,
-        ...(course ? { course } : {}),
-      });
+  });
+}
+
+/**
+ * Academic-calendar markers by `type` (UNVERIFIED beyond the three seen: TASSE, LEZIONI, ESAMI; anything
+ * else is treated as a deadline). All-day events.
+ */
+const AGENDA_KIND: Record<string, 'deadline' | 'lecture' | 'exam_call'> = {
+  TASSE: 'deadline',
+  LEZIONI: 'lecture',
+  ESAMI: 'exam_call',
+};
+
+export function mapAgenda(items: readonly unknown[], ctx: MapContext): Mapped {
+  return build('agenda', items, (raw) => {
+    // A booking slot (has its own time range and place) or a dated marker; nothing else is understood.
+    if (raw && typeof raw === 'object' && 'd_ini_turno_ts' in raw) {
+      const p = slotAgendaSchema.safeParse(raw);
+      if (!p.success) return p.error;
+      const s = p.data;
+      const start = toIso(s.d_ini_turno_ts, ctx);
+      const end = s.d_fin_turno_ts ? toIso(s.d_fin_turno_ts, ctx) : undefined;
+      if (!start)
+        return new z.ZodError([
+          {
+            code: 'custom',
+            path: ['d_ini_turno_ts'],
+            message: 'unreadable time',
+            input: s.d_ini_turno_ts,
+          },
+        ]);
+      const location = clean(s.place?.name);
+      return [
+        {
+          ...base(`agenda:${s.id}`),
+          kind: 'booking',
+          title: clip(s.title, 300),
+          start,
+          ...(end ? { end } : {}),
+          ...(location ? { location } : {}),
+        },
+      ];
     }
-    return drafts;
-  });
-}
-
-export function mapBookings(items: readonly unknown[]): Mapped {
-  const f = FIELDS.booking;
-  return build('bookings', items, bookingSchema, (it) => {
-    const loc = locationText(get(it, f.location));
-    const end = str(get(it, f.end));
+    const p = datedAgendaSchema.safeParse(raw);
+    if (!p.success) return p.error;
+    const a = p.data;
     return [
       {
-        ...base(`booking:${String(get(it, f.id))}`),
-        kind: 'booking',
-        title: String(get(it, f.title)).slice(0, 300),
-        start: String(get(it, f.start)),
-        ...(end ? { end } : {}),
-        ...(loc ? { location: loc } : {}),
-      },
-    ];
-  });
-}
-
-export function mapDeadlines(items: readonly unknown[]): Mapped {
-  const f = FIELDS.deadline;
-  return build('deadlines', items, deadlineSchema, (it) => {
-    const title = String(get(it, f.title)).slice(0, 300);
-    const date = String(get(it, f.date));
-    const rawId = get(it, f.id);
-    const course = courseKeyOf(get(it, f.course));
-    const id =
-      rawId === null || rawId === undefined ? derivedId(title, date, course ?? '') : idText(rawId);
-    return [
-      {
-        ...base(`deadline:${id}`),
-        kind: 'deadline',
-        title,
+        ...base(`agenda:${a.id}`),
+        kind: AGENDA_KIND[a.type ?? ''] ?? 'deadline',
+        title: clip(a.title, 300),
         allDay: true,
-        start: date,
-        ...(course ? { course } : {}),
+        start: a.date,
       },
     ];
   });
 }
 
-/** Assignments of one course. The API publishes only the upload time, so that is the event time. */
-export function mapAssignments(courseId: string, items: readonly unknown[]): Mapped {
-  const f = FIELDS.assignment;
-  return build('assignments', items, assignmentSchema, (it) => {
-    const title = String(get(it, f.title)).slice(0, 300);
-    const uploadedAt = String(get(it, f.uploadedAt));
-    const rawId = get(it, f.id);
-    const id = rawId === null || rawId === undefined ? derivedId(title, uploadedAt) : idText(rawId);
-    const course = courseKeyOf(courseId);
-    return [
-      {
-        ...base(`assignment:${courseId}:${id}`),
-        kind: 'assignment',
-        title,
-        start: uploadedAt,
-        description: 'Uploaded on the student portal. No due date is published for this item.',
-        ...(course ? { course } : {}),
-      },
-    ];
+/** shortcode -> course id, from the course list (`carico`). Also returns the issues of that list. */
+export function mapCourses(items: readonly unknown[]): {
+  byShortcode: Map<string, string>;
+  names: Map<string, string>;
+  issues: string[];
+} {
+  const byShortcode = new Map<string, string>();
+  const names = new Map<string, string>();
+  const issues: string[] = [];
+  items.forEach((raw, i) => {
+    const p = carichiSchema.safeParse(raw);
+    if (!p.success) {
+      issues.push(`carico #${i + 1}: ${problems(p.error)}`);
+      return;
+    }
+    const sc = clean(p.data.shortcode);
+    if (sc) byShortcode.set(sc, p.data.id);
+    const name = clean(p.data.name);
+    if (name) names.set(`polito:${p.data.id}`, name);
   });
+  return { byShortcode, names, issues };
 }

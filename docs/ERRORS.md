@@ -172,12 +172,6 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **Why:** the scheduled `serve` loop is syncing right now, or a manual `sync` is. Two at once could fight over the same calendar. A crashed run can leave its lock behind for up to 20 minutes.
 **What to do:** wait a minute and try again. If it still says so 20 minutes after a crash, it clears itself.
 
-## E_POLITO_API_NOT_READY
-
-**What happened:** `SOURCE_POLITO_API_ENABLED=true` is set, but this version cannot log in to the Polito student API yet, so that source was skipped for this run.
-**Why:** the login method for an unattended server (password only, or an enrolled MFA device) has not been confirmed. It is settled by the owner-run probe in `probe/` (see `docs/M3-RUNBOOK.md`); until then the Polito API source deliberately does nothing.
-**What to do:** nothing is broken and nothing was deleted: the calendar feeds (ICS) are unaffected. Set `SOURCE_POLITO_API_ENABLED=false` to silence this message, or follow `docs/M3-RUNBOOK.md` to help settle the login question.
-
 ## E_POLITO_API_AUTH_REJECTED
 
 **What happened:** the Polito server refused our login or our token (HTTP 401 or 403).
@@ -186,13 +180,13 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 
 ## E_POLITO_API_FETCH_FAILED
 
-**What happened:** a request to the Polito API failed: no connection, a timeout, a server error, or "too many requests" (HTTP 429).
+**What happened:** a request to the Polito portal failed: no connection, a timeout, a server error, or "too many requests" (HTTP 429).
 **Why:** Polito's service is down or busy, or this machine is offline.
 **What to do:** wait; the next scheduled run tries again. After a 429 the source makes no more requests in that run. Events that could not be read are never deleted from your calendar.
 
 ## E_POLITO_API_UNEXPECTED_DATA
 
-**What happened:** an answer from the Polito API did not have the shape this program expects, so those items were left out and the run is marked incomplete.
+**What happened:** an answer from the Polito portal did not have the shape this program expects, so those items were left out and the run is marked incomplete.
 **Why:** Polito changed its API, or the program's description of a field was a guess that the real data does not match.
 **What to do:** nothing is deleted while this lasts. Run the probe again (`docs/M3-RUNBOOK.md`) and open an issue with the sanitized summary (never raw data) so the description can be corrected. The message names the endpoint and the field, never the content.
 

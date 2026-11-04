@@ -4,7 +4,7 @@ Self-hosted service that syncs a Politecnico di Torino student's schedule, exams
 
 > **Unofficial.** Not affiliated with or endorsed by Politecnico di Torino. Personal, self-hosted use only.
 
-## Status: M3 (ICS source, Google login, serve loop; Polito API source prepared but disabled)
+## Status: M3 (ICS source, Google login, serve loop; Polito portal source, opt-in)
 
 It can sync an ICS calendar feed into a **dedicated Google calendar**. M2 is built and unit-tested, but **has not yet run against a real Google account or a real Polito feed** (nobody with credentials has run it yet). The steps that prove it are in [`docs/M2-RUNBOOK.md`](docs/M2-RUNBOOK.md). The Moodle source, the setup wizard and `doctor` do not exist yet (see `docs/PLAN.md`). A Moodle calendar export URL already works as an ICS feed.
 
@@ -15,7 +15,7 @@ What exists and is tested:
 - **`sync`** (`--dry-run` shows the plan), a deletion safety threshold (refuse a run that would delete more than 30% of our events), sqlite history, **`serve`** (scheduled, no overlapping runs, graceful stop, heartbeat, local status page), `verify-google`.
 - Coded, explained errors (`docs/ERRORS.md`), log redaction (feed URLs can hold a secret token and are never logged), secret scan in CI.
 
-**Polito API source (M3, not usable yet).** It is written against an API description and tested on **invented** data, is **off by default** (`SOURCE_POLITO_API_ENABLED=false`) and, when switched on, says `E_POLITO_API_NOT_READY` and does nothing, because whether an unattended server can log in (the account may require MFA) is still unknown. The owner-run scripts in [`probe/`](probe/README.md) settle that; see [`docs/M3-RUNBOOK.md`](docs/M3-RUNBOOK.md). Whatever it does, it never deletes ICS events and never makes an incomplete result look complete.
+**Polito portal source (M3, opt-in, off by default).** With `SOURCE_POLITO_PORTAL_ENABLED=true` plus `POLITO_USERNAME` and `POLITO_PASSWORD` in `.env`, the service logs in to the student portal the way a browser does (university single sign-on), reads your lectures, exam calls (booked ones as exams), booking slots and academic-calendar dates from one JSON document, and writes them next to your ICS events. **Read this first:** it uses your real university password, stored in `.env` on your machine; it is not an advertised API and can break when the portal changes; a login from a server can be answered with a multi-factor step, in which case the source stops (`E_POLITO_LOGIN_EXTRA_STEP`) and the ICS source is unaffected; if the university refuses the password, further attempts are paused until you change it (so an hourly retry never locks your account). It never deletes ICS events and never makes an incomplete result look complete. It has been proven on one account's real login (decision 018); its mapper was written from that account's sanitized sample, so other accounts may show differences. Steps: [`docs/M3-RUNBOOK.md`](docs/M3-RUNBOOK.md).
 
 What is simulated: `--fixture DIR` (developer only) uses an in-memory calendar instead of Google and says so in its output; the ICS parser it can use is the real one. Everything else talks to the real services.
 

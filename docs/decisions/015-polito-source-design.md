@@ -1,5 +1,7 @@
 # 015 The Polito API source: shape, evidence and fail-closed rules
 
+> **Superseded by 018/019 (the app-API skeleton was removed).** The fail-closed rules below carried over to the portal source.
+
 **Decided**
 
 - **Disabled by default** (`SOURCE_POLITO_API_ENABLED=false`; any value other than `true`/`false` is `E_CONFIG_INVALID`). The ICS source is complete without it. With the switch on, the only auth that exists is `UnavailableAuth`, which fails with `E_POLITO_API_NOT_READY`: the source then makes **no network request**, the run is marked incomplete (exit code 2), the ICS events sync normally, and the error is printed. No credentials are read from anywhere.

@@ -1,31 +1,23 @@
 import type { Logger } from 'pino';
 import { toUserError, UserError } from '../../util/errors.js';
 import type { CanonicalEvent, Source, SourceResult } from '../types.js';
-import { ENDPOINTS, FIELDS } from './fields.js';
-import type { PolitoApi } from './client.js';
 import {
-  mapAssignments,
-  mapBookings,
-  mapDeadlines,
+  mapAgenda,
+  mapCourses,
   mapExams,
   mapLectures,
   POLITO_SOURCE_ID,
+  STUDENT_DATA_PATH,
   type Mapped,
 } from './map.js';
-import { courseSchema, listItems } from './schemas.js';
+import { LoginLatch } from './portal/latch.js';
+import { PortalSession, type PortalOptions } from './portal/login.js';
 
 export { POLITO_SOURCE_ID };
 
-const DAY_MS = 86_400_000;
-/** Lectures and deadlines are asked for a window around today (the API takes plain dates). */
-const WINDOW_PAST_DAYS = 90;
-const WINDOW_FUTURE_DAYS = 180;
-/** Safety cap on per-course calls (one request each). */
-const MAX_COURSES = 40;
-
-export interface EndpointReport {
-  endpoint: string;
-  status: 'ok' | 'failed' | 'not-run';
+export interface SectionReport {
+  section: string;
+  status: 'ok' | 'failed';
   items: number;
   events: number;
   /** Positions and field names only. */
@@ -34,141 +26,150 @@ export interface EndpointReport {
 }
 
 export interface PolitoSourceOptions {
-  api: PolitoApi;
+  username: string;
+  password: string;
+  /** Zone in which zone-less portal times are read (the configured TZ). */
+  tz: string;
+  dataDir: string;
   logger?: Logger;
   now?: () => Date;
+  /** Test hooks for the login (fetch, allowed hosts, pauses). */
+  portal?: PortalOptions;
 }
 
-const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+const unexpected = (what: string): UserError =>
+  new UserError({
+    code: 'E_POLITO_API_UNEXPECTED_DATA',
+    what: `The portal data was not understood: ${what}.`,
+    why: 'The portal changed its answer, or the login did not really succeed (an expired session returns a page, not data).',
+    action:
+      'Nothing was deleted. Run probe/05-idp-login.mjs and compare the sections with docs/decisions/018-portal-sso-finding.md; report the difference (field names only).',
+  });
+
+function section(root: Record<string, unknown>, name: string): unknown[] | undefined {
+  const s = root[name];
+  const data = s && typeof s === 'object' ? (s as Record<string, unknown>)['data'] : undefined;
+  return Array.isArray(data) ? (data as unknown[]) : undefined;
+}
 
 /**
- * The Polito student API as a Source. DISABLED unless SOURCE_POLITO_API_ENABLED=true, and FAIL CLOSED:
- * the result is `complete: true` only if every endpoint answered and every item was understood. Anything
- * else (login refused, rate limit, a field that does not match, a stopped run) makes it incomplete, so
- * the engine deletes nothing for this source. It never throws and never touches ICS events.
+ * The student portal as a Source (decisions 017/018). DISABLED unless SOURCE_POLITO_PORTAL_ENABLED=true.
+ * FAIL CLOSED: `complete: true` only if the login worked, the answer had every expected section and every
+ * item was understood. Anything else (refused login, MFA step, outage, unknown shape) makes it incomplete,
+ * so the engine deletes nothing for this source. It never throws and never touches ICS events.
  */
-export class PolitoApiSource implements Source {
+export class PolitoPortalSource implements Source {
   readonly id = POLITO_SOURCE_ID;
-  lastReport: EndpointReport[] = [];
+  lastReport: SectionReport[] = [];
+  /** `polito:<course id>` -> course name, from the course list (feeds course-names for decision 013). */
+  courseNames = new Map<string, string>();
+  private readonly latch: LoginLatch;
 
-  constructor(private readonly o: PolitoSourceOptions) {}
+  constructor(private readonly o: PolitoSourceOptions) {
+    this.latch = new LoginLatch(o.dataDir);
+  }
+
+  private fail(error: UserError): SourceResult {
+    this.lastReport = [
+      { section: 'login', status: 'failed', items: 0, events: 0, issues: [], error },
+    ];
+    this.o.logger?.warn({ code: error.code }, 'polito portal source failed; no deletions for it');
+    return { source: this.id, complete: false, events: [] };
+  }
 
   async fetch(): Promise<SourceResult> {
     const now = (this.o.now ?? (() => new Date()))();
-    const from = isoDay(new Date(now.getTime() - WINDOW_PAST_DAYS * DAY_MS));
-    const to = isoDay(new Date(now.getTime() + WINDOW_FUTURE_DAYS * DAY_MS));
-    const range = { fromDate: from, toDate: to };
+    let data: unknown;
+    try {
+      this.latch.assertOpen(this.o.username, this.o.password);
+      const session = await PortalSession.login(this.o.username, this.o.password, this.o.portal);
+      data = await session.getJson(STUDENT_DATA_PATH);
+    } catch (err) {
+      const error = toUserError(err);
+      if (error.code === 'E_POLITO_API_AUTH_REJECTED') {
+        // Never repeat a refused login until the credentials change (lockout protection).
+        this.latch.block(this.o.username, this.o.password, now);
+      }
+      return this.fail(error);
+    }
 
-    const reports: EndpointReport[] = [];
+    const root = (
+      data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined
+    )?.['data'];
+    const top = data as Record<string, unknown> | undefined;
+    if (!top || top['success'] !== true || !root || typeof root !== 'object') {
+      return this.fail(unexpected('the document has no "success" flag or no "data" part'));
+    }
+    const sections = root as Record<string, unknown>;
+    const orari = (sections['orari'] as { data?: { lezioni?: unknown } } | undefined)?.data
+      ?.lezioni;
+    const lezioni = Array.isArray(orari) ? (orari as unknown[]) : undefined;
+    const appelli = section(sections, 'appelli');
+    const agenda = section(sections, 'agenda');
+    const carico = section(sections, 'carico');
+
+    const ctx = { tz: this.o.tz };
+    const reports: SectionReport[] = [];
     const events = new Map<string, CanonicalEvent>();
-    let stopped = false;
-
-    /** Runs one endpoint. After an error that would repeat on every call, nothing else is requested. */
-    const run = async (
-      endpoint: string,
-      path: string,
-      query: Record<string, string>,
-      map: (items: unknown[]) => Mapped,
-    ): Promise<unknown[] | undefined> => {
-      if (stopped) {
-        reports.push({ endpoint, status: 'not-run', items: 0, events: 0, issues: [] });
-        return undefined;
+    const missing = (name: string): void => {
+      reports.push({
+        section: name,
+        status: 'failed',
+        items: 0,
+        events: 0,
+        issues: [],
+        error: unexpected(`the section "${name}" is missing or is not a list`),
+      });
+    };
+    const take = (name: string, items: unknown[], mapped: Mapped): void => {
+      const issues = [...mapped.issues];
+      for (const e of mapped.events) {
+        if (events.has(e.sourceId)) issues.push(`${name}: the id ${e.sourceId} appears twice`);
+        else events.set(e.sourceId, e);
       }
-      try {
-        const body = await this.o.api.get(path, query);
-        const items = listItems(body);
-        if (!items) {
-          reports.push({
-            endpoint,
-            status: 'failed',
-            items: 0,
-            events: 0,
-            issues: [],
-            error: new UserError({
-              code: 'E_POLITO_API_UNEXPECTED_DATA',
-              what: `The answer for ${endpoint} is neither a list nor an object with a "data" list.`,
-              why: 'Polito changed its API, or the way lists are wrapped was guessed wrong.',
-              action:
-                'Nothing was deleted. See docs/M3-RUNBOOK.md and report it (without content).',
-            }),
-          });
-          return undefined;
-        }
-        const mapped = map(items);
-        for (const e of mapped.events) if (!events.has(e.sourceId)) events.set(e.sourceId, e);
-        const report: EndpointReport = {
-          endpoint,
-          status: 'ok',
-          items: items.length,
-          events: mapped.events.length,
-          issues: mapped.issues,
-        };
-        if (mapped.issues.length > 0) {
-          report.error = new UserError({
-            code: 'E_POLITO_API_UNEXPECTED_DATA',
-            what: `${mapped.issues.length} item(s) from ${endpoint} did not have the expected shape and were left out.`,
-            why: `Details: ${mapped.issues.slice(0, 3).join('; ')}${mapped.issues.length > 3 ? '; ...' : ''}.`,
-            action:
-              'The other items are synced. Nothing is deleted from this source while this lasts. See docs/M3-RUNBOOK.md.',
-          });
-        }
-        reports.push(report);
-        return items;
-      } catch (err) {
-        const error = toUserError(err);
-        reports.push({ endpoint, status: 'failed', items: 0, events: 0, issues: [], error });
-        // Login problems, rate limits and outages repeat on every call: stop asking.
-        if (error.code !== 'E_POLITO_API_UNEXPECTED_DATA') stopped = true;
-        return undefined;
+      const report: SectionReport = {
+        section: name,
+        status: 'ok',
+        items: items.length,
+        events: mapped.events.length,
+        issues,
+      };
+      if (issues.length > 0) {
+        report.error = unexpected(
+          `${issues.length} item(s) in "${name}" did not have the expected shape (${issues.slice(0, 3).join('; ')}${issues.length > 3 ? '; ...' : ''})`,
+        );
       }
+      reports.push(report);
     };
 
-    const courseItems = await run('courses', ENDPOINTS.courses, {}, (items) => ({
-      events: [],
-      issues: items.flatMap((raw, i) => {
-        const p = courseSchema.safeParse(raw);
-        return p.success ? [] : [`courses #${i + 1}: ${p.error.issues[0]?.message ?? 'invalid'}`];
-      }),
-    }));
-    await run('lectures', ENDPOINTS.lectures, range, mapLectures);
-    await run('exams', ENDPOINTS.exams, {}, mapExams);
-    await run('bookings', ENDPOINTS.bookings, {}, mapBookings);
-    await run('deadlines', ENDPOINTS.deadlines, range, mapDeadlines);
-
-    const courseIds = (courseItems ?? [])
-      .map((c) =>
-        c && typeof c === 'object' ? (c as Record<string, unknown>)[FIELDS.course.id] : undefined,
-      )
-      .filter((id): id is string | number => typeof id === 'string' || typeof id === 'number')
-      .map(String);
-    const skippedCourses = Math.max(0, courseIds.length - MAX_COURSES);
-    for (const courseId of courseIds.slice(0, MAX_COURSES)) {
-      await run(
-        `assignments (course ${courseIds.indexOf(courseId) + 1})`,
-        ENDPOINTS.assignments(courseId),
-        {},
-        (items) => mapAssignments(courseId, items),
-      );
-    }
+    let byShortcode = new Map<string, string>();
+    if (carico) {
+      const courses = mapCourses(carico);
+      byShortcode = courses.byShortcode;
+      this.courseNames = courses.names;
+      take('carico', carico, { events: [], issues: courses.issues });
+    } else missing('carico');
+    if (lezioni) take('orari', lezioni, mapLectures(lezioni, ctx));
+    else missing('orari');
+    if (appelli) take('appelli', appelli, mapExams(appelli, ctx, byShortcode));
+    else missing('appelli');
+    if (agenda) take('agenda', agenda, mapAgenda(agenda, ctx));
+    else missing('agenda');
 
     this.lastReport = reports;
     for (const r of reports) {
       this.o.logger?.info(
         {
-          endpoint: r.endpoint,
+          section: r.section,
           status: r.status,
           items: r.items,
           events: r.events,
           issues: r.issues.length,
-          ...(r.error ? { code: r.error.code } : {}),
         },
-        'polito endpoint read',
+        'polito section read',
       );
     }
-    const complete =
-      courseItems !== undefined &&
-      skippedCourses === 0 &&
-      reports.every((r) => r.status === 'ok' && r.issues.length === 0);
+    const complete = reports.every((r) => r.status === 'ok' && r.issues.length === 0);
     return { source: this.id, complete, events: [...events.values()] };
   }
 }

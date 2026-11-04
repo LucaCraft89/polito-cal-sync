@@ -1,89 +1,43 @@
-# M3 runbook: settle the Polito login question
+# M3 runbook: use the Polito portal source on your machine
 
-M3 is built as far as it can be without your data. What is **missing** is evidence only your machine can produce. This page says what to run, in which order, what to expect, and what to send back. Nothing here asks you to paste a password, token or MFA code anywhere except into the hidden prompt of a script on your own machine.
+M3's question was whether an unattended server can read the Polito schedule. The owner's probe run says yes for the **web portal** (decision 018): the university single sign-on accepted the password with no extra step, and one JSON document holds lectures, exam calls and more. The source is built (decision 019) and unit-tested on **invented** data. **Not yet run against the real portal inside the sync.** These steps do that on your machine. Nothing here asks you to paste a password anywhere except your own `.env`.
 
-**The Polito API source is disabled by default** (`SOURCE_POLITO_API_ENABLED=false`) and stays harmless: your ICS feeds keep working with or without it. If you switch it on today it only says `E_POLITO_API_NOT_READY` and changes nothing.
+## Before you start
 
-## What you will do (about 20 minutes, ~15 requests in total)
+- Change your Polito password if you have not since the HAR file with it was shared.
+- Know the risks (README, "Polito portal source"): your real password lives in `.env`; this is not an official API; a login from a server can get an MFA step later; a refused login pauses the source until you change the password.
+- Optional but recommended (PLAN, open decision 1): tell Polito ICT you use a personal tool that reads your own schedule.
 
-Read `probe/README.md` once (rules, what each script sends). Then, from the repo folder (`pnpm install` done):
+## Steps
 
-1. **Optional, recommended first:** email Polito ICT / the app maintainers (contact in the `students-app` repo's `publiccode.yml`) saying you want to read your own schedule with a personal self-hosted tool. Open decision 1 in `docs/PLAN.md`. Do this **before** `--enrol`.
+1. `git pull`, then `pnpm install`.
+2. Put these in `.env` (no quotes):
 
-2. Recon, no password:
-
-   ```bash
-   node probe/01-recon.mjs
+   ```
+   SOURCE_POLITO_PORTAL_ENABLED=true
+   POLITO_USERNAME=<your university username>
+   POLITO_PASSWORD=<your password>
    ```
 
-3. Login probe, asks for username and password in a hidden prompt:
+   Keep your ICS URL in `SOURCE_POLITO_ICS_URLS` as before. `.env` is git-ignored; the secret scan fails if it is ever staged.
+
+3. **Dry run first** (writes nothing to Google; it logs in once, 13 requests, ~25 s):
 
    ```bash
-   node probe/02-login.mjs
+   pnpm sync --dry-run
    ```
 
-   Read the "Verdict" it prints.
-   - **"accepted"**: password-only login gives a working token for this account. Go on to step 4.
-   - **"NOT enough"**: MFA (or something else) blocks. **Stop and send back `02-login.json` first.** Whether to try `--enrol` is a decision about your account: read the warning in `probe/README.md`, then decide. The Polito API source can stay switched off forever; the ICS source is the supported path (RESEARCH.md).
-   - **shape check failed** (400/415/422): nothing real was sent. Send back `02-login.json`; the login body will be fixed.
+   Expect a `polito  complete  N events` line next to `ics`. If it says INCOMPLETE, the error block under it names the code (see `docs/ERRORS.md`): `E_POLITO_API_AUTH_REJECTED` (wrong password; the source then pauses until you change it), `E_POLITO_LOGIN_EXTRA_STEP` (MFA now asked: tell the assistant), `E_POLITO_API_UNEXPECTED_DATA` (the shape differs: tell the assistant the section and field names it prints, never values).
 
-4. Samples (only if step 3 said the token works, or after a successful `--enrol`):
+4. **Check by eye** that a few lectures and exam calls in the plan match what the portal shows (times especially: zone-less exam times are read as Europe/Rome; if exams come out one or two hours off, tell the assistant, that is the open assumption).
+5. When satisfied, `pnpm sync` for real (this is the first time portal events reach your Google calendar), then `pnpm sync` again: the second run must change nothing.
 
-   ```bash
-   node probe/03-samples.mjs --shift-days 30
-   node probe/04-check.mjs
-   ```
+## What to send back
 
-5. Review the checklist at the end of `probe/README.md`, then send back **only**: `probe/out/01-recon.json`, `probe/out/02-login.json`, `probe/out/03-samples-summary.json` and `probe/out/sanitized/*.json`.
+Only: the `polito ...` lines of the dry run, any error code block, and whether the times matched. No raw portal data, no `.env`.
 
-## Route B: web-portal SSO (WORKS: decision 018; what is left is below) (decided with the owner after the app API login stalled)
+## Still open
 
-The app API login (`POST /auth/login`) could not be called correctly (decision 016). The owner's HAR showed the web portal logs in with a plain SAML flow and a password, so `probe/05-idp-login.mjs` tests that route (decision 017). Run it on your machine:
-
-```bash
-git pull
-node probe/05-idp-login.mjs --shift-days 30
-```
-
-Send back `probe/out/05-idp-login.json` and, after the checklist, `probe/out/sanitized/idp-student-data.json`. Change the Polito password first if you have not (it was in a HAR file).
-
-## Needs owner data (nothing below can be finished without it)
-
-| #   | Open item                                                                                                   | Settled by                                                  | Where the answer goes                                                         |
-| --- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 1   | Does `POST /auth/login` (basic) work with the guessed body (`type`, `username`, `password`, `preferences`)? | `02-login.json` shape check + login status                  | decision 016; `probe/lib/session.mjs` template                                |
-| 2   | Is MFA demanded for this account; which path (`/auth/mfa/*`)?                                               | `02-login.json` dataCall + mfaStatus                        | decision 016                                                                  |
-| 3   | Can an unattended server complete MFA (enrolled device key)?                                                | only `--enrol`, owner's choice                              | decision 016                                                                  |
-| 4   | Token lifetime; is re-login needed; header scheme (`Bearer`?)                                               | `02-login.json` (`token.lifetimeSeconds`, data call status) | decision 016; `src/sources/polito/client.ts`                                  |
-| 5   | How lists are wrapped (bare array or `{data: []}`)                                                          | `03-samples-summary.json` bodyShape                         | `listItems` in `schemas.ts`                                                   |
-| 6   | Real field names for every GUESS in the table                                                               | `sanitized/*.json`                                          | `src/sources/polito/fields.ts` (one file), then replace the invented fixtures |
-| 7   | Lecture fields (all UNVERIFIED), `places` / `location` shape, exam `status` enum values                     | `sanitized/lectures.json`, `exams.json`                     | `fields.ts`, `EXAM_BOOKED_STATUSES`                                           |
-| 8   | Is there a join between Moodle course codes and Polito course ids?                                          | compare `sanitized/courses.json` with ICS `CATEGORIES`      | decision 013 (aliases)                                                        |
-| 9   | A real login implementation (`PolitoAuth`), credentials storage in `DATA_DIR`                               | follows from 1 to 4                                         | new `src/sources/polito/auth.ts` + tests, then a live run                     |
-| 10  | A live `sync --dry-run` with the Polito source                                                              | follows from 9                                              | recorded in the M3 closing commit                                             |
-
-If item 2 or 3 turns out negative, the Polito API source is closed as "not feasible unattended", the skeleton stays disabled, and M3 is done on the evidence alone (PLAN: "live run only if auth works unattended").
-
-## What the assistant will do with your files
-
-1. Write the finding into `docs/decisions/016-polito-auth-finding.md`.
-2. Correct `fields.ts` (and `schemas.ts` wrapping) from the sanitized samples, replace the invented fixtures with the real sanitized ones in `test/fixtures/polito/real/`, and rerun the mapper tests.
-3. If login works unattended: implement `PolitoAuth`, credentials in `DATA_DIR` (0600), and do a `sync --dry-run` on your machine with you.
-
-## If something goes wrong
-
-- A script says `STOPPED` with 429: wait an hour or more before trying again; do not loop.
-- Login answered 401: do not retry quickly (accounts can lock). Check the username (matricola) and password in the Polito web portal first.
-- You typed the password wrong: the script does not retry; just run it again later.
-- You think a file leaked something: delete `probe/out/` (it is git-ignored and local) and tell the assistant the field name, not the value.
-
-## Where M3 stands after the third SSO run
-
-Done and verified on the owner's account: headless login (no MFA step), one data call, lifetimes of the IdP cookies. Done and tested with fakes: the login client, the lockout latch.
-
-Still needs the owner:
-
-1. Send `probe/out/sanitized/idp-student-data.json` (after the checklist in `probe/README.md`; it was written to `sanitized/`, not `needs-review/`, so the automatic checks passed). It is needed for the **date formats** and **values of enums** (`type`, `agenda` kinds) before the mapper can be written without guessing.
-2. Decide where credentials live: proposed `POLITO_USERNAME` / `POLITO_PASSWORD` in `.env`.
-3. Decide on reusing the 90-day IdP session cookie (decision 018).
-4. After the mapper exists: a live `pnpm sync --dry-run` on the owner's machine.
+- Reusing the 90-day identity-provider session between runs (fewer password logins; adds a long-lived file in `DATA_DIR`). Decision 018.
+- Raw date formats were never seen unaltered (probe sanitizer bug, fixed). Re-running `node probe/05-idp-login.mjs` would show them, at the cost of another login.
+- One account only. The `probe/` scripts for the app API (steps 1 to 3) are kept for the record; the app API login was never made to work (decision 016).

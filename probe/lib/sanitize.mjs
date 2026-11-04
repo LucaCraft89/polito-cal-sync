@@ -42,14 +42,13 @@ export class Sanitizer {
     return l;
   }
 
+  /** Moves the DATE part by whole days and keeps the rest of the string (time, zone or none) verbatim. */
   shift(s) {
     if (this.shiftDays === 0) return s;
-    this.stats.shiftedDates++;
-    const isDate = ISO_DATE.test(s);
-    const t = Date.parse(isDate ? `${s}T00:00:00Z` : s.length === 16 ? `${s}:00Z` : s);
+    const t = Date.parse(`${s.slice(0, 10)}T00:00:00Z`);
     if (Number.isNaN(t)) return s;
-    const shifted = new Date(t + this.shiftDays * DAY_MS).toISOString();
-    return isDate ? shifted.slice(0, 10) : shifted.replace('.000Z', 'Z');
+    this.stats.shiftedDates++;
+    return `${new Date(t + this.shiftDays * DAY_MS).toISOString().slice(0, 10)}${s.slice(10)}`;
   }
 
   /** @param {string} key @param {string} value */
