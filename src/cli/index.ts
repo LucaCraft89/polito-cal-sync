@@ -133,10 +133,14 @@ async function syncCommand(
         tz: config.tz,
         calendarId: out.calendarId,
         results: out.results,
-        sourceNotes: incompleteNotes(out.feeds),
+        sourceNotes: [
+          ...incompleteNotes(out.feeds),
+          ...out.sourceErrors.map((e) => `${e.source}: ${e.error.code}`),
+        ],
       }),
     );
     for (const f of out.feeds) if (f.error) io.err(formatUserError(f.error));
+    for (const e of out.sourceErrors) io.err(formatUserError(e.error));
     if (out.report.error && out.report.status !== 'dry-run')
       io.err(formatUserError(out.report.error));
     const incomplete = out.results.some((r) => !r.complete);
@@ -280,8 +284,8 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
         { config, logger, deps },
         { dryRun: false, force: false },
       );
-      const failedFeed = out.feeds.find((f) => f.error);
-      return { report: out.report, ...(failedFeed?.error ? { warning: failedFeed.error } : {}) };
+      const warning = out.feeds.find((f) => f.error)?.error ?? out.sourceErrors[0]?.error;
+      return { report: out.report, ...(warning ? { warning } : {}) };
     },
   });
 

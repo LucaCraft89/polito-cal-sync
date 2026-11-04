@@ -1,0 +1,4 @@
+[
+  { "id": 4, "title": "Invented deadline", "date": "2026-11-20", "courseId": 101 },
+  { "title": "Deadline without id", "date": "2026-11-25" }
+]

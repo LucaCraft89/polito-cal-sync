@@ -65,6 +65,13 @@ const envSchema = z.object({
         });
       }),
   ),
+  SOURCE_POLITO_API_ENABLED: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(['true', 'false'], 'must be true or false')
+      .default('false')
+      .transform((v) => v === 'true'),
+  ),
   STATUS_PORT: z.preprocess(
     emptyToUndefined,
     z.coerce
@@ -99,6 +106,8 @@ export interface Config {
   google: { clientId?: string; clientSecret?: string; calendarId?: string };
   /** Per-course / feed ICS URLs. They may embed a secret token: never log or print them. */
   icsUrls: string[];
+  /** The Polito student API source. Off by default; see docs/M3-RUNBOOK.md for why it cannot log in yet. */
+  polito: { enabled: boolean };
   /** Local status page: port 0 turns it off. */
   status: { port: number; bind: string };
 }
@@ -132,6 +141,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: v.LOG_LEVEL,
     google,
     icsUrls: splitList(v.SOURCE_POLITO_ICS_URLS ?? ''),
+    polito: { enabled: v.SOURCE_POLITO_API_ENABLED },
     status: { port: v.STATUS_PORT, bind: v.STATUS_BIND },
   };
 }

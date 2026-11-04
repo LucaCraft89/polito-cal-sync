@@ -1,0 +1,9 @@
+[
+  {
+    "id": 9,
+    "title": "Invented lab slot",
+    "startsAt": "2026-11-12T09:00:00Z",
+    "endsAt": "2026-11-12T10:00:00Z",
+    "location": { "name": "Lab 5" }
+  }
+]

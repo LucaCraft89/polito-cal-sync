@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "Alpha lecture",
+      "startsAt": "2026-11-10T08:30:00Z",
+      "endsAt": "2026-11-10T10:00:00Z",
+      "courseId": 101,
+      "location": { "name": "Room 1" },
+      "extra": "ignored"
+    },
+    {
+      "id": 2,
+      "title": "Beta lecture",
+      "startsAt": "2026-11-11T13:00:00Z",
+      "endsAt": "2026-11-11T14:30:00Z",
+      "courseId": "C-202",
+      "location": "Room 2"
+    }
+  ]
+}
