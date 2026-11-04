@@ -126,6 +126,9 @@ try {
     form = undefined;
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
+      const target = new URL(loc, currentUrl);
+      steps[steps.length - 1].redirectsTo =
+        `${target.hostname}${target.pathname}?[${[...target.searchParams.keys()].join(',')}]`;
       currentUrl = new URL(loc, currentUrl).href;
       continue;
     }
@@ -142,6 +145,17 @@ try {
         outcome =
           'login form shown again after the password was sent (credentials rejected, or an extra requirement)';
         report.secondLoginForm = describeForm(login);
+        report.secondLoginKeywords = keywords(text, [
+          'errat',
+          'invalid',
+          'non valid',
+          'incorrect',
+          'scadut',
+          'bloccat',
+          'blocked',
+          'expired',
+          'attempt',
+        ]);
         break;
       }
       const action = new URL(login.action || currentUrl, currentUrl).href;
@@ -151,8 +165,11 @@ try {
       for (const i of login.inputs) {
         if (i.type === 'password' || i.name === 'j_password') form[i.name] = password;
         else if (i.name === 'j_username') form[i.name] = username;
-        else if (i.type === 'hidden' || i.name === '_eventId_proceed' || i.name === 'donotcache')
-          form[i.name] = i.value;
+        // In the browser the proceed button's script fills this field with "1" (the HAR showed a one
+        // character value); an empty value makes the flow show the login form again.
+        else if (i.name === '_eventId_proceed') form[i.name] = i.value || '1';
+        else if (i.type === 'hidden') form[i.name] = i.value;
+        // checkboxes (donotcache) are left out: unchecked boxes are not sent by a browser
       }
       report.loginFormFields = describeForm(login);
       report.sentFieldNames = Object.keys(form);
@@ -229,9 +246,9 @@ say(
 function describeForm(f) {
   return { method: f.method, inputs: f.inputs.map((i) => `${i.name}:${i.type}`) };
 }
-function keywords(text) {
-  const t = text.toLowerCase();
-  return [
+function keywords(
+  text,
+  list = [
     'otp',
     'mfa',
     'passkey',
@@ -241,5 +258,8 @@ function keywords(text) {
     'authenticator',
     'codice',
     'verifica',
-  ].filter((k) => t.includes(k));
+  ],
+) {
+  const t = text.toLowerCase();
+  return list.filter((k) => t.includes(k));
 }

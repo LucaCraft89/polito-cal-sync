@@ -9,3 +9,9 @@
 - **Probe rules:** allow-listed hosts only (a redirect elsewhere stops it), password POSTed once and only to a form on an allowed host, 30 requests max, 1.5 s apart, 429 stops, any unknown form at the IdP stops it unanswered (that is the MFA evidence), no cookie values or password recorded, data sanitized in memory.
 - **Known risks of route B:** scraping-style fragility (CSRF token, SAML forwarding, cookie jar, answers in a legacy format), a server may look like a new device and trigger MFA, an unattended session needs the password stored in `DATA_DIR` (0600), and it is not an advertised interface. The README must say so if it ships.
 - **Not covered:** `getOrariLezioneStudente` (its request body was not kept), passkey login.
+
+## First owner run (2026-11-04)
+
+Chain: portal `/login` (301) -> `/secure/login` (302) -> IdP SSO redirect (302) -> IdP login form (200) -> **password POST answered 302 back to the IdP, and the login form was shown again**. In the owner's browser HAR the same POST answered 200 with the `SAMLResponse` form. Nothing was asked beyond the login form, no MFA page appeared, and cookies were all session cookies (no lifetimes stated).
+
+Most likely cause (a probe bug, not a rejection): the form's `_eventId_proceed` is a hidden field that the page script sets to a one-character value (HAR: length 1) and the probe sent it empty; `donotcache` is a checkbox that an unchecked browser does not send. **Fixed**: `_eventId_proceed` is sent as `1` when empty, checkboxes are left out, and the probe now records the redirect target (host, path, query names) and error-ish keywords of a redisplayed form so a rejection can be told from a missing field. Unverified until the next run. One more password POST will happen on that run.
