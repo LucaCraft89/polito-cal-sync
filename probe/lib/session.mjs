@@ -106,15 +106,10 @@ const DEVICE = {
 };
 const BASIC = { type: 'basic', username: '$username', password: '$password' };
 
-// Form-encoded variants: a legacy server that reads only form fields never sees a JSON body.
-const FORM = { username: '$username', password: '$password', ...DEVICE };
-
 export const LOGIN_VARIANTS = [
   { name: 'device-in-body', template: { ...BASIC, ...DEVICE, preferences: {} } },
   { name: 'device-in-preferences', template: { ...BASIC, preferences: { ...DEVICE } } },
   { name: 'device-in-query', template: { ...BASIC, preferences: {} }, query: { ...DEVICE } },
-  { name: 'form-flat', form: true, template: { ...FORM } },
-  { name: 'form-flat-with-type', form: true, template: { type: 'basic', ...FORM } },
 ];
 
 /** Names only (no secrets) so probe 03 can reuse the variant 02 found. */
