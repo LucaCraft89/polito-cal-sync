@@ -7,16 +7,35 @@ import { Sanitizer } from './lib/sanitize.mjs';
 import { DEFAULT_BASE_URL, Http, parseArgs, StopProbe, USER_AGENT } from './lib/http.mjs';
 import { askHidden, askYesNo } from './lib/prompt.mjs';
 import { shapeOfBody } from './lib/shape.mjs';
-import { loadTemplate, login, safeParse } from './lib/session.mjs';
+import { LOGIN_VARIANTS, loadTemplate, login, safeParse, variantByName } from './lib/session.mjs';
+import { readFileSync } from 'node:fs';
+import { OUT_DIR } from './lib/out.mjs';
+import { join } from 'node:path';
 import { writeOut } from './lib/out.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const baseUrl = typeof args['base-url'] === 'string' ? args['base-url'] : DEFAULT_BASE_URL;
 const shiftDays = Number(args['shift-days'] ?? 0);
 const assignmentCourses = Math.min(Number(args['assignment-courses'] ?? 2), 3);
-const template = loadTemplate(
-  typeof args['body-template'] === 'string' ? args['body-template'] : undefined,
-);
+// Probe 02 found which request shape the server accepts and saved its name (no secrets).
+let variant;
+if (typeof args['body-template'] === 'string') {
+  variant = { name: 'custom', template: loadTemplate(args['body-template']) };
+} else {
+  try {
+    variant = variantByName(
+      JSON.parse(readFileSync(join(OUT_DIR, 'login-variant.json'), 'utf8')).variant,
+    );
+  } catch {
+    variant = undefined;
+  }
+  if (!variant || !LOGIN_VARIANTS.includes(variant)) {
+    console.error(
+      'No accepted login shape on record. Run node probe/02-login.mjs first; it finds one.',
+    );
+    process.exit(1);
+  }
+}
 if (!Number.isInteger(shiftDays) || !Number.isInteger(assignmentCourses)) {
   console.error('--shift-days and --assignment-courses must be whole numbers.');
   process.exit(1);
@@ -70,7 +89,7 @@ const raw = {}; // in memory only
 let token;
 
 try {
-  const l = await login(http, template, username, password);
+  const l = await login(http, variant, username, password);
   summary.login = { status: l.record.status };
   say(`login -> ${l.record.status}`);
   if (l.record.status === 401 || l.record.status === 403 || !l.token) {

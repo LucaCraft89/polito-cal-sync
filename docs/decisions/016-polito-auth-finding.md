@@ -1,6 +1,13 @@
 # 016 Polito API auth finding
 
-**Status: PENDING. No evidence exists yet.** The build session cannot log in (no credentials, and recon needing them runs only on the owner's machine). Everything below is a question, not an answer. The owner runs the probe (`docs/M3-RUNBOOK.md`) and this file is then rewritten with "Finding: ..." lines.
+**Status: PARTIAL. First real probe run by the owner, 2026-11-04** (`01-recon.json`, `02-login.json`, `03-samples-summary.json`). Login was never evaluated, so the MFA and token questions are still open.
+
+**Findings (observed):**
+
+- Server `Apache/2.4.6 (CentOS)`; `GET /api` answers 301 (HTML); `/health` and `/version` do not exist (404); `/lectures` without a token answers **401** with JSON `{error: string, code: integer}` and **no `WWW-Authenticate` header**. CORS allows the request headers `Content-Type, X-Username, Authorization, X-Test-Mode`. Errors have the form `{error, code}`.
+- `POST /auth/login` with our guessed body (`type`, `username`, `password`, `preferences`) answers **HTTP 500** `{"error":"Missing required params (device_platform,device_version,device_model)","code":-6}`: a request-shape problem reported as a 500, before credentials are looked at. So the guessed body is wrong; where the three device fields go is unknown (probe 02 now tries body, `preferences`, query with fake credentials).
+
+**Probe bug found and fixed:** the shape check treated that 500 as "unclear" and still sent the owner's real password with the rejected body (harmless here, the server rejected the request before checking credentials, but against the promise). Now the real password is sent only with a shape that got 401/403 from fake credentials.
 
 | Question (all UNVERIFIED)                                                   | Finding                                     |
 | --------------------------------------------------------------------------- | ------------------------------------------- |

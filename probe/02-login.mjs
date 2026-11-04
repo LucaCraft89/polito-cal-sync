@@ -1,7 +1,7 @@
 // Step 2 - login probe (interactive). READ probe/README.md FIRST.
 //   node probe/02-login.mjs                 find out what logging in demands (no account change)
 //   node probe/02-login.mjs --enrol         ALSO register a device key as an MFA factor (changes your account)
-//   node probe/02-login.mjs --no-shape-check --body-template FILE --base-url URL   (options)
+//   node probe/02-login.mjs --body-template FILE --base-url URL   (options)
 // The password is typed into a hidden prompt, used for one login request, and then forgotten.
 // Only status codes, key names, lengths and the token lifetime are written (probe/out/02-login.json).
 
@@ -11,38 +11,51 @@ import { DEFAULT_BASE_URL, Http, parseArgs, StopProbe, USER_AGENT } from './lib/
 import { askHidden, askYesNo } from './lib/prompt.mjs';
 import { shapeOfBody } from './lib/shape.mjs';
 import { describeToken } from './lib/jwt.mjs';
-import { errorEvidence, loadTemplate, login, safeParse, todayIso } from './lib/session.mjs';
+import {
+  errorEvidence,
+  findAcceptedVariant,
+  loadTemplate,
+  login,
+  LOGIN_VARIANTS,
+  safeParse,
+  todayIso,
+} from './lib/session.mjs';
 import { OUT_DIR, writeOut } from './lib/out.mjs';
 import { dirname, join } from 'node:path';
 
 const args = parseArgs(process.argv.slice(2));
 const baseUrl = typeof args['base-url'] === 'string' ? args['base-url'] : DEFAULT_BASE_URL;
 const wantEnrol = args.enrol === true;
-const shapeCheck = args['shape-check'] !== false && args['no-shape-check'] !== true;
-const template = loadTemplate(
-  typeof args['body-template'] === 'string' ? args['body-template'] : undefined,
-);
+const variants =
+  typeof args['body-template'] === 'string'
+    ? [{ name: 'custom', template: loadTemplate(args['body-template']) }]
+    : LOGIN_VARIANTS;
 
 const say = (l = '') => console.log(l);
 say('probe 02 - login probe');
 say(`  server:      ${baseUrl}`);
 say(`  User-Agent:  ${USER_AGENT}`);
 say('');
-say('  It will send, one at a time and 1.5 s apart (at most 5 requests):');
-if (shapeCheck) {
-  say(
-    '    1. POST /auth/login with a FAKE username and password, only to learn whether the server',
-  );
-  say(
-    '       accepts the shape of the request (a rejected fake login is harmless: no real account).',
-  );
-}
+say('  It will send, one at a time and 1.5 s apart (at most 7 requests):');
+say(
+  '    1. POST /auth/login with a FAKE username and password, up to 3 times with different request',
+);
+say(
+  '       shapes (the server needs device fields; where they go is unknown). Fake logins for a user that',
+);
+say(
+  '       does not exist are harmless. YOUR password is sent only with a shape the server answered',
+);
+say('       with 401/403; if none is accepted the script stops and your password is never sent.');
 say('    2. POST /auth/login with YOUR username and password (typed below, hidden, never saved).');
 say(
   '    3. GET  /deadlines for today only (tests whether the token you got is enough to read data).',
 );
 say('    4. GET  /auth/mfa/status (asks the server which MFA state it sees for this token).');
 if (wantEnrol) say('    5. --enrol: the MFA device registration described below.');
+say(
+  '  The device fields sent are: your OS name, the Node version, and the text "polito-cal-sync".',
+);
 say('  It stops at once on HTTP 429, and it never retries a login.');
 say('  It records: status codes, which MFA path the server demands, key names and lengths of the');
 say('  answers (no values), the token lifetime if the token states one. Nothing is sent anywhere');
@@ -108,46 +121,31 @@ const report = {
   when: new Date().toISOString(),
   baseUrl,
   userAgent: USER_AGENT,
-  bodyTemplate: args['body-template'] ? 'custom file' : 'default (type basic + preferences {})',
+  bodyTemplate: args['body-template'] ? 'custom file' : 'built-in variants',
   assumptions: ['Authorization scheme for data calls: Bearer <token> (UNVERIFIED)'],
 };
 const secrets = [username, password];
 
 try {
-  // 1. Shape check with fake credentials.
-  if (shapeCheck) {
-    say('\n[1] shape check with a fake login ...');
-    const fake = await login(http, template, 'probe-no-such-user', 'probe-wrong-password');
-    const s = fake.record.status;
-    report.shapeCheck = {
-      status: s,
-      interpretation:
-        s === 401 || s === 403
-          ? 'credentials rejected: the server understood the request shape'
-          : s >= 200 && s < 300
-            ? 'UNEXPECTED: a fake login was accepted'
-            : s === 400 || s === 415 || s === 422
-              ? 'request shape rejected: the body template is probably wrong'
-              : 'unclear',
-      bodyShape: fake.record.bodyShape,
-      // The fake credentials are not secret, so what the server said is kept (short fields only).
-      serverSaid: fake.record.evidence,
-    };
-    say(`    -> ${s}  ${report.shapeCheck.interpretation}`);
-    if (s === 400 || s === 415 || s === 422 || (s >= 200 && s < 300)) {
-      report.stoppedBecause =
-        'shape check did not look like a credentials rejection; the real login was NOT sent';
-      say('    Not sending your real password with a request shape the server rejects.');
-      say(
-        '    Send back probe/out/02-login.json; we will fix the body template (or pass --body-template).',
-      );
-      throw new StopProbe('shape check failed');
-    }
+  // 1. Shape check with fake credentials: the real password is sent ONLY with a variant the server
+  //    answered with 401/403 (it understood the request and rejected the fake credentials).
+  say('\n[1] shape check with fake logins ...');
+  const found = await findAcceptedVariant(http, variants);
+  report.shapeCheck = { tries: found.tries, accepted: found.accepted?.name };
+  for (const t of found.tries) say(`    ${t.variant} -> ${t.status}`);
+  if (!found.accepted) {
+    report.stoppedBecause =
+      'no login request shape was accepted by the server; the real login was NOT sent';
+    say('    The server did not accept any request shape (see the messages above/in the file).');
+    say('    Your real password was NOT sent. Send back probe/out/02-login.json.');
+    throw new StopProbe(report.stoppedBecause);
   }
+  const accepted = found.accepted;
+  writeOut('login-variant.json', { variant: accepted.name });
 
   // 2. Real login.
   say('\n[2] login with your credentials ...');
-  const real = await login(http, template, username, password);
+  const real = await login(http, accepted, username, password);
   report.login = real.record;
   say(`    -> ${real.record.status}${real.token ? '  (token received, not shown)' : ''}`);
   const loginOk = real.record.status >= 200 && real.record.status < 300;

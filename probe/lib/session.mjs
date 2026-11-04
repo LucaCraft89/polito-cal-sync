@@ -68,9 +68,12 @@ export function safeParse(text) {
  * One login request. Returns what we may record (no values) plus the token for in-memory use.
  * @param {import('./http.mjs').Http} http
  */
-export async function login(http, template, username, password) {
-  const body = fillTemplate(template, username, password);
-  const res = await http.request('POST', '/auth/login', { body });
+export async function login(http, variant, username, password) {
+  const body = fillTemplate(variant.template, username, password);
+  const res = await http.request('POST', '/auth/login', {
+    body,
+    ...(variant.query ? { query: variant.query } : {}),
+  });
   const secrets = [username, password];
   const parsed = safeParse(res.text);
   const token = parsed && typeof parsed === 'object' ? parsed.token : undefined;
@@ -91,3 +94,45 @@ export async function login(http, template, username, password) {
 }
 
 export const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// The first real answer (probe 02, 2026-11-04): HTTP 500 {"error":"Missing required params
+// (device_platform,device_version,device_model)","code":-6}. Where those three go is UNKNOWN, so the
+// shape check tries these variants with FAKE credentials, in order, and the first one the server answers
+// with 401/403 is used. Values are honest (we are not a phone app) and carry no hostname or user name.
+const DEVICE = {
+  device_platform: process.platform,
+  device_version: process.version,
+  device_model: 'polito-cal-sync',
+};
+const BASIC = { type: 'basic', username: '$username', password: '$password' };
+
+export const LOGIN_VARIANTS = [
+  { name: 'device-in-body', template: { ...BASIC, ...DEVICE, preferences: {} } },
+  { name: 'device-in-preferences', template: { ...BASIC, preferences: { ...DEVICE } } },
+  { name: 'device-in-query', template: { ...BASIC, preferences: {} }, query: { ...DEVICE } },
+];
+
+/** Names only (no secrets) so probe 03 can reuse the variant 02 found. */
+export const variantByName = (name) => LOGIN_VARIANTS.find((v) => v.name === name);
+
+/**
+ * Sends FAKE credentials with each variant until the server answers 401/403 (it understood the request
+ * and rejected the credentials). Anything else, including 500, means "shape not accepted": the real
+ * password is never sent in that case. At most one request per variant.
+ */
+export async function findAcceptedVariant(http, variants) {
+  const tries = [];
+  for (const variant of variants) {
+    const fake = await login(http, variant, 'probe-no-such-user', 'probe-wrong-password');
+    const status = fake.record.status;
+    tries.push({
+      variant: variant.name,
+      status,
+      bodyShape: fake.record.bodyShape,
+      // Fake credentials are not secret, so the server's short error text is kept.
+      serverSaid: fake.record.evidence,
+    });
+    if (status === 401 || status === 403) return { accepted: variant, tries };
+  }
+  return { accepted: undefined, tries };
+}

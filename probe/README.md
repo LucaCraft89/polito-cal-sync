@@ -28,16 +28,16 @@ Sends 4 GET requests with no credentials: the API root, `/health`, `/version` (g
 node probe/02-login.mjs
 ```
 
-Sends at most 4 requests (about 4 more with `--enrol`):
+Sends at most 7 requests (about 4 more with `--enrol`):
 
-1. `POST /auth/login` with a **fake** username and password, only to check the server accepts the _shape_ of the request (a fake login for a user that does not exist is harmless). If the server rejects the shape, the script stops **before** your real password is used, and tells you to send back the file so the body can be fixed.
+1. `POST /auth/login` with a **fake** username and password, up to 3 times with different request shapes. The first real answer showed the server needs `device_platform`, `device_version`, `device_model`, and it is unknown where they go (JSON body, inside `preferences`, or query string), so each place is tried in turn. The device values are your OS name, the Node version and `polito-cal-sync`. **Your real password is sent only with a shape the server answered with 401/403.** If none is accepted the script stops and your password is never sent.
 2. `POST /auth/login` with **your** credentials, once.
 3. `GET /deadlines` for today only: is the token you got enough to read data?
 4. `GET /auth/mfa/status`: what does the server say about MFA for this token?
 
 It prints a plain verdict ("a password-only token was accepted" or "was NOT enough"), and what an unattended server would need. Writes `probe/out/02-login.json`: status codes, headers like `www-authenticate`, key names, string lengths, the token's algorithm and lifetime if it is a JWT, short server error messages (scrubbed of anything you typed). **No values.** Safe to send back after you read it.
 
-Options: `--no-shape-check` (skip the fake login), `--body-template FILE` (a JSON login body with the strings `"$username"` and `"$password"`, if the default body is wrong), `--base-url URL`.
+Options: `--body-template FILE` (a JSON login body with the strings `"$username"` and `"$password"`, if the default body is wrong), `--base-url URL`.
 
 #### `--enrol`: only if step 2 says MFA blocks, and only if you decide so
 
@@ -53,7 +53,7 @@ node probe/02-login.mjs --enrol
 node probe/03-samples.mjs --shift-days 30
 ```
 
-Logs in once and reads each endpoint once (about 8 requests): lectures, exams, bookings, deadlines, courses (all small windows or lists) and the assignments of up to 2 courses (`--assignment-courses N`, max 3). Redacts in memory and writes `probe/out/sanitized/*.json` plus `probe/out/03-samples-summary.json` (shapes and counts).
+Needs step 2 to have found an accepted login shape (it saves its name in `probe/out/login-variant.json`). Logs in once and reads each endpoint once (about 8 requests): lectures, exams, bookings, deadlines, courses (all small windows or lists) and the assignments of up to 2 courses (`--assignment-courses N`, max 3). Redacts in memory and writes `probe/out/sanitized/*.json` plus `probe/out/03-samples-summary.json` (shapes and counts).
 
 What the redaction does: **default deny**. Names, titles, descriptions, teachers, rooms, emails, links and every unknown string become placeholders (`text-3`, `person-1`, `id-7`), the same real text always getting the same placeholder across files; ids are renumbered; coordinates become 0; dates are kept, or moved by `--shift-days N` (all by the same N); a string survives only if its key name says it is an enum (`status`, `type`, ...) and it looks like one. If any automatic check finds something (an email, a JWT, a long random string, a student number, anything you typed) the files go to `probe/out/needs-review/` instead and the script says so.
 
