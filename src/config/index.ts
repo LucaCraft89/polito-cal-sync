@@ -86,6 +86,16 @@ const envSchema = z.object({
         'must be an http(s) URL',
       ),
   ),
+  POLITO_SQUADS: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .regex(
+        /^\s*[\w-]+\s*=\s*[\w-]+(?:\s*,\s*[\w-]+\s*=\s*[\w-]+)*\s*$/,
+        'must look like 309885=B,309742=2 (course id = squad, comma separated)',
+      )
+      .optional(),
+  ),
   POLITO_USERNAME: z.preprocess(emptyToUndefined, z.string().optional()),
   POLITO_PASSWORD: z.preprocess(emptyToUndefined, z.string().optional()),
   STATUS_PORT: z.preprocess(
@@ -99,6 +109,15 @@ const envSchema = z.object({
   ),
   STATUS_BIND: z.preprocess(emptyToUndefined, z.string().default('127.0.0.1')),
 });
+
+function parseSquads(value: string | undefined): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const pair of splitList(value ?? '')) {
+    const [id = '', squad = ''] = pair.split('=').map((x) => x.trim());
+    (out[id] ??= []).push(squad.toUpperCase());
+  }
+  return out;
+}
 
 function splitList(value: string): string[] {
   return value
@@ -123,7 +142,14 @@ export interface Config {
   /** Per-course / feed ICS URLs. They may embed a secret token: never log or print them. */
   icsUrls: string[];
   /** The Polito student portal source (decision 018). Off by default. The password is a secret: never log it. */
-  polito: { enabled: boolean; username?: string; password?: string; examCalls: 'booked' | 'all' };
+  polito: {
+    enabled: boolean;
+    username?: string;
+    password?: string;
+    examCalls: 'booked' | 'all';
+    /** course id -> squads the student is in */
+    squads: Record<string, string[]>;
+  };
   /** Host of the Moodle site: events from a feed on this host are labelled as Moodle events. */
   moodleHost: string;
   /** Local status page: port 0 turns it off. */
@@ -163,6 +189,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     polito: {
       enabled: v.SOURCE_POLITO_PORTAL_ENABLED,
       examCalls: v.POLITO_EXAM_CALLS,
+      squads: parseSquads(v.POLITO_SQUADS),
       ...(v.POLITO_USERNAME !== undefined ? { username: v.POLITO_USERNAME } : {}),
       ...(v.POLITO_PASSWORD !== undefined ? { password: v.POLITO_PASSWORD } : {}),
     },

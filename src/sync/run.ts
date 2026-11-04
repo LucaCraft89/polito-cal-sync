@@ -36,6 +36,8 @@ export interface RunOutput {
   feeds: FeedReport[];
   /** Sources other than ICS that failed or came back incomplete, with the reason. */
   sourceErrors: { source: string; error: UserError }[];
+  /** Hints from sources (not errors), shown under "Sources". */
+  sourceNotes: string[];
 }
 
 /** The sources switched on by the configuration: the ICS feeds and, if enabled, the Polito portal. */
@@ -78,6 +80,7 @@ export function buildSources(ctx: RunContext): {
       tz: config.tz,
       dataDir: config.dataDir,
       examCalls: config.polito.examCalls,
+      squads: new Map(Object.entries(config.polito.squads).map(([id, v]) => [id, new Set(v)])),
       logger,
       ...(deps.now ? { now: deps.now } : {}),
       ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
@@ -171,6 +174,7 @@ export async function runConfiguredSync(
       calendarId: google.calendarId,
       feeds: ics?.lastReport ?? [],
       sourceErrors,
+      sourceNotes: polito?.notes ?? [],
     };
   } finally {
     state?.close();

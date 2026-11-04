@@ -15,6 +15,8 @@ export const STUDENT_DATA_PATH = '/pls/portal30/sviluppo.studente.getStudentData
  */
 
 export interface Mapped {
+  /** Hints for the user (not errors), e.g. which squads exist. */
+  notes?: string[];
   events: CanonicalEvent[];
   /** Positions and field names only, never content. A non-empty list makes the result incomplete. */
   issues: string[];
@@ -126,11 +128,33 @@ const base = (sourceId: string) => ({ source: POLITO_SOURCE_ID, sourceId });
 const courseKey = (id: string | null | undefined): string | undefined =>
   id ? `polito:${id}` : undefined;
 
-export function mapLectures(items: readonly unknown[], ctx: MapContext): Mapped {
-  return build('orari.lezioni', items, (raw) => {
+/** A lesson of one squad (parallel group) says so in its description: "SQUADRA A", "SQUADRA 2". */
+const SQUAD = /^squadra\s+(\S+)$/i;
+
+/** course id -> the squads the student is in. A lesson of another squad of a listed course is left out. */
+export type Squads = ReadonlyMap<string, ReadonlySet<string>>;
+
+export function mapLectures(
+  items: readonly unknown[],
+  ctx: MapContext,
+  squads: Squads = new Map(),
+): Mapped {
+  const seen = new Map<string, Set<string>>(); // courses with squads but no setting -> labels seen
+  const mapped = build('orari.lezioni', items, (raw) => {
     const p = lectureSchema.safeParse(raw);
     if (!p.success) return p.error;
     const l = p.data;
+    const label = SQUAD.exec(l.description?.trim() ?? '')?.[1]?.toUpperCase();
+    if (label && l.courseId) {
+      const mine = squads.get(l.courseId);
+      if (mine) {
+        if (!mine.has(label)) return []; // another squad: validated above, left out on purpose
+      } else {
+        const set = seen.get(l.courseId) ?? new Set<string>();
+        set.add(label);
+        seen.set(l.courseId, set);
+      }
+    }
     const start = toIso(l.startsAt, ctx);
     const end = l.endsAt ? toIso(l.endsAt, ctx) : undefined;
     if (!start)
@@ -153,6 +177,15 @@ export function mapLectures(items: readonly unknown[], ctx: MapContext): Mapped 
       },
     ];
   });
+  if (seen.size > 0) {
+    const list = [...seen]
+      .map(([id, labels]) => `${id} (${[...labels].sort().join(', ')})`)
+      .join('; ');
+    mapped.notes = [
+      `Some lectures belong to squads and are ALL kept. Set POLITO_SQUADS=<course id>=<your squad>,... to keep only yours. Course ids and squads seen: ${list}.`,
+    ];
+  }
+  return mapped;
 }
 
 /** `status: "booked"` is the only value seen; it (and only it) makes an exam call kind `exam`. */

@@ -42,7 +42,7 @@ Works: login without MFA, 70 events read with no issues, plan of 86 creates and 
 
 ## After the owner's review (decision 020)
 
-Exam calls are now booked-only by default; Moodle events carry a `[Moodle]` prefix; `pnpm sync --dry-run --details` shows course, place and note under each event. Open: how to tell the student's squad from the others (needs the distinguishing field, see 020).
+Exam calls are now booked-only by default; Moodle events carry a `[Moodle]` prefix; `pnpm sync --dry-run --details` shows course, place and note under each event. Squads: set `POLITO_SQUADS=<course id>=<your squad>,...` in `.env` (the dry run prints the course ids and squads it saw).
 
 ## Still open
 

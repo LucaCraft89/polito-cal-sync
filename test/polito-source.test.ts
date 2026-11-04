@@ -18,6 +18,7 @@ function source(
   tz = 'Europe/Rome',
   extra: object = {},
   examCalls?: 'booked' | 'all',
+  squads?: Map<string, Set<string>>,
 ) {
   const w = world({ data });
   const dataDir = mkdtempSync(join(tmpdir(), 'pcs-polsrc-'));
@@ -27,6 +28,7 @@ function source(
     tz,
     dataDir,
     ...(examCalls ? { examCalls } : {}),
+    ...(squads ? { squads } : {}),
     now: () => new Date('2026-11-04T10:00:00Z'),
     portal: opts(w.fetchImpl, extra),
   });
@@ -139,6 +141,90 @@ describe('Polito portal source: mapping', () => {
     d.data['career'] = 'anything at all';
     d.data['applicazioni'] = { data: [{ weird: true }] };
     expect((await source(d).s.fetch()).complete).toBe(true);
+  });
+});
+
+describe('Polito portal source: squads', () => {
+  const withSquads = () => {
+    const d = fixture();
+    const l = (d.data['orari'] as { data: { lezioni: Record<string, unknown>[] } }).data.lezioni;
+    const mk = (id: number, courseId: number, description: string) => ({
+      ...l[0],
+      id,
+      courseId,
+      description,
+      startsAt: '2026-12-11T11:30:00+01:00',
+      endsAt: '2026-12-11T13:00:00+01:00',
+    });
+    l.push(
+      mk(9101, 5001, 'SQUADRA A'),
+      mk(9102, 5001, 'SQUADRA B'),
+      mk(9103, 5002, 'Squadra 2'),
+      mk(9104, 5002, 'SQUADRA 3'),
+    );
+    return d;
+  };
+  const ids = (r: { events: { sourceId: string }[] }) => r.events.map((e) => e.sourceId);
+
+  it('without a setting every squad is kept and a note says exactly what to set', async () => {
+    const { s } = source(withSquads());
+    const r = await s.fetch();
+    expect(r.complete).toBe(true);
+    expect(ids(r)).toEqual(
+      expect.arrayContaining(['lecture:9101', 'lecture:9102', 'lecture:9103', 'lecture:9104']),
+    );
+    expect(s.notes).toHaveLength(1);
+    expect(s.notes[0]).toContain('POLITO_SQUADS');
+    expect(s.notes[0]).toContain('5001 (A, B)');
+    expect(s.notes[0]).toContain('5002 (2, 3)');
+  });
+
+  it('with a setting only your squad stays (per course); lessons without a squad are never dropped', async () => {
+    const { s } = source(
+      withSquads(),
+      'Europe/Rome',
+      {},
+      undefined,
+      new Map([
+        ['5001', new Set(['B'])],
+        ['5002', new Set(['2'])],
+      ]),
+    );
+    const r = await s.fetch();
+    expect(r.complete).toBe(true);
+    expect(ids(r)).toEqual(
+      expect.arrayContaining(['lecture:9102', 'lecture:9103', 'lecture:9001', 'lecture:9002']),
+    );
+    expect(ids(r)).not.toContain('lecture:9101');
+    expect(ids(r)).not.toContain('lecture:9104');
+    expect(s.notes).toEqual([]);
+  });
+
+  it('a squad setting for one course does not hide the note for another', async () => {
+    const { s } = source(
+      withSquads(),
+      'Europe/Rome',
+      {},
+      undefined,
+      new Map([['5001', new Set(['A'])]]),
+    );
+    await s.fetch();
+    expect(s.notes[0]).toContain('5002');
+    expect(s.notes[0]).not.toContain('5001 (');
+  });
+
+  it('a dropped squad lesson is still validated (an unreadable one keeps the run incomplete)', async () => {
+    const d = withSquads();
+    const l = (d.data['orari'] as { data: { lezioni: Record<string, unknown>[] } }).data.lezioni;
+    l[l.length - 4]!['startsAt'] = 'later';
+    const r = await source(
+      d,
+      'Europe/Rome',
+      {},
+      undefined,
+      new Map([['5001', new Set(['B'])]]),
+    ).s.fetch();
+    expect(r.complete).toBe(false);
   });
 });
 

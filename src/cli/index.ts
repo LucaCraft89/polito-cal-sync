@@ -139,6 +139,7 @@ async function syncCommand(
         sourceNotes: [
           ...incompleteNotes(out.feeds),
           ...out.sourceErrors.map((e) => `${e.source}: ${e.error.code}`),
+          ...out.sourceNotes,
         ],
       }),
     );

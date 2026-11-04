@@ -6,6 +6,7 @@ import {
   mapCourses,
   mapExams,
   mapLectures,
+  type Squads,
   POLITO_SOURCE_ID,
   STUDENT_DATA_PATH,
   type Mapped,
@@ -35,6 +36,8 @@ export interface PolitoSourceOptions {
   now?: () => Date;
   /** `booked` (default): only exam calls the student booked; `all`: every open call. */
   examCalls?: 'booked' | 'all';
+  /** The student's squad per course id (lessons of other squads are left out). */
+  squads?: Squads;
   /** Test hooks for the login (fetch, allowed hosts, pauses). */
   portal?: PortalOptions;
 }
@@ -63,6 +66,8 @@ function section(root: Record<string, unknown>, name: string): unknown[] | undef
 export class PolitoPortalSource implements Source {
   readonly id = POLITO_SOURCE_ID;
   lastReport: SectionReport[] = [];
+  /** Hints for the user from the last fetch (not errors). */
+  notes: string[] = [];
   /** `polito:<course id>` -> course name, from the course list (feeds course-names for decision 013). */
   courseNames = new Map<string, string>();
   private readonly latch: LoginLatch;
@@ -110,6 +115,7 @@ export class PolitoPortalSource implements Source {
     const agenda = section(sections, 'agenda');
     const carico = section(sections, 'carico');
 
+    this.notes = [];
     const ctx = { tz: this.o.tz };
     const reports: SectionReport[] = [];
     const events = new Map<string, CanonicalEvent>();
@@ -151,8 +157,11 @@ export class PolitoPortalSource implements Source {
       this.courseNames = courses.names;
       take('carico', carico, { events: [], issues: courses.issues });
     } else missing('carico');
-    if (lezioni) take('orari', lezioni, mapLectures(lezioni, ctx));
-    else missing('orari');
+    if (lezioni) {
+      const lectures = mapLectures(lezioni, ctx, this.o.squads);
+      this.notes.push(...(lectures.notes ?? []));
+      take('orari', lezioni, lectures);
+    } else missing('orari');
     if (appelli)
       take(
         'appelli',
