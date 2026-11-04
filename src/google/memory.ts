@@ -1,7 +1,10 @@
 import { GoogleApiError } from './types.js';
 import type { EventsApi, GoogleEventResource, ListParams } from './types.js';
 
-type Op = 'list' | 'get' | 'insert' | 'patch' | 'delete';
+type Op = 'list' | 'get' | 'insert' | 'patch' | 'update' | 'delete';
+
+/** What `patch` does to a deleted event's tombstone (not verified against Google: see docs/decisions/010). */
+export type TombstonePatch = 'restores' | 'answers-410' | 'stays-cancelled';
 
 export interface Call {
   op: Op;
@@ -31,7 +34,10 @@ export class MemoryEventsApi implements EventsApi {
   private readonly calendars = new Map<string, Map<string, GoogleEventResource>>();
   private readonly failures: { op: Op; error: GoogleApiError; times: number }[] = [];
 
-  constructor(private readonly pageSize = 250) {}
+  constructor(
+    private readonly pageSize = 250,
+    private readonly tombstonePatch: TombstonePatch = 'restores',
+  ) {}
 
   /** Test helper: put an event in a calendar as if it was already there. */
   seed(calendarId: string, resource: GoogleEventResource & { id: string }): void {
@@ -111,7 +117,32 @@ export class MemoryEventsApi implements EventsApi {
     const cal = this.cal(p.calendarId);
     const current = cal.get(p.eventId);
     if (!current) return Promise.reject(new GoogleApiError({ status: 404, reason: 'notFound' }));
+    if (current.status === 'cancelled' && this.tombstonePatch !== 'restores') {
+      if (this.tombstonePatch === 'answers-410') {
+        return Promise.reject(new GoogleApiError({ status: 410, reason: 'deleted' }));
+      }
+      return Promise.resolve(structuredClone(current)); // accepted, but the event stays cancelled
+    }
     const next = merge(current, p.resource);
+    cal.set(p.eventId, next);
+    return Promise.resolve(structuredClone(next));
+  }
+
+  update(p: {
+    calendarId: string;
+    eventId: string;
+    resource: GoogleEventResource;
+  }): Promise<GoogleEventResource> {
+    this.enter({ op: 'update', calendarId: p.calendarId, eventId: p.eventId });
+    const cal = this.cal(p.calendarId);
+    if (!cal.has(p.eventId)) {
+      return Promise.reject(new GoogleApiError({ status: 404, reason: 'notFound' }));
+    }
+    const next = structuredClone({
+      ...p.resource,
+      id: p.eventId,
+      status: p.resource.status ?? 'confirmed',
+    });
     cal.set(p.eventId, next);
     return Promise.resolve(structuredClone(next));
   }

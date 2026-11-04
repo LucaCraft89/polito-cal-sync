@@ -110,6 +110,14 @@ export function createEventsApi(calendar: calendar_v3.Calendar): EventsApi {
         );
         return res.data as GoogleEventResource;
       }),
+    update: (p) =>
+      guarded(async () => {
+        const res = await events.update(
+          { calendarId: p.calendarId, eventId: p.eventId, requestBody: p.resource },
+          REQUEST_OPTIONS,
+        );
+        return res.data as GoogleEventResource;
+      }),
     delete: (p) =>
       guarded(async () => {
         await events.delete({ calendarId: p.calendarId, eventId: p.eventId }, REQUEST_OPTIONS);

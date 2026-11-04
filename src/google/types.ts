@@ -34,6 +34,12 @@ export interface EventsApi {
     eventId: string;
     resource: GoogleEventResource;
   }): Promise<GoogleEventResource>;
+  /** Full replace (events.update). Only used if `patch` cannot restore a deleted event. */
+  update(p: {
+    calendarId: string;
+    eventId: string;
+    resource: GoogleEventResource;
+  }): Promise<GoogleEventResource>;
   delete(p: { calendarId: string; eventId: string }): Promise<void>;
 }
 

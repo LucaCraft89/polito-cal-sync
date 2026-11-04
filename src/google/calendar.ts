@@ -206,16 +206,12 @@ export class OwnedCalendar {
     if (existing.status === 'cancelled') {
       // A deleted event keeps blocking its id and loses its properties. Nothing of anyone's is
       // left in it, so restore it with our full content.
-      await this.call(() =>
-        this.api.patch({ calendarId: this.calendarId, eventId: resource.id, resource }),
-      );
+      await this.restore(resource);
       this.owned.add(resource.id);
       return 'revived';
     }
     if (marker(existing)) {
-      await this.call(() =>
-        this.api.patch({ calendarId: this.calendarId, eventId: resource.id, resource }),
-      );
+      await this.restore(resource);
       this.owned.add(resource.id);
       return 'revived';
     }
@@ -225,6 +221,30 @@ export class OwnedCalendar {
       why: 'Ids are a hash, so this is extremely unlikely unless the event was created by hand with that id.',
       action: 'Nothing was changed on that event. Report it in an issue.',
     });
+  }
+
+  /**
+   * Brings a deleted event (tombstone) back with our full content. `events.patch` is tried first;
+   * if Google refuses it (404/410) or leaves the event cancelled, `events.update` (full replace)
+   * is used. Which one Google really accepts is checked by the `verify-google` command.
+   */
+  private async restore(resource: GoogleEventResource & { id: string }): Promise<void> {
+    let restored = false;
+    try {
+      const res = await this.call(() =>
+        this.api.patch({ calendarId: this.calendarId, eventId: resource.id, resource }),
+      );
+      restored = res.status !== 'cancelled';
+    } catch (err) {
+      const status =
+        err instanceof UserError && err.cause instanceof GoogleApiError ? err.cause.status : 0;
+      if (status !== 404 && status !== 410) throw err;
+    }
+    if (!restored) {
+      await this.call(() =>
+        this.api.update({ calendarId: this.calendarId, eventId: resource.id, resource }),
+      );
+    }
   }
 
   async patch(googleId: string, resource: GoogleEventResource): Promise<PatchOutcome> {
