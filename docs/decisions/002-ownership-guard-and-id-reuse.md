@@ -7,3 +7,5 @@
 - Per-event failures do not stop a run; auth, permission, missing calendar, quota, outage and internal errors do (they would repeat on every call).
 
 **UNVERIFIED against real Google:** that `events.patch` can restore a cancelled event, and that a tombstone from `events.get` carries no extended properties. The in-memory fake is written to that assumption. Verify in M2 with the real calendar; the fallback is `events.update` (full replace).
+
+**Update (M2):** still unverified; made verifiable and non-blocking, see decision 010.

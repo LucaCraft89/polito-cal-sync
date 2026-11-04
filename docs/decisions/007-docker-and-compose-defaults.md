@@ -8,3 +8,5 @@
 - Container: non-root `node` (uid 1000), `/data` volume, read-only root fs, `cap_drop: ALL`, `no-new-privileges`.
 - `.env` is optional for compose (`required: false`); Node reads `.env` itself when run outside Docker.
 - **Verification:** the CI `docker` job (GitHub runner, run 4 on branch `m0-m1`) builds the image, checks the user is not root, and runs `healthcheck` against a fresh named volume: green. Locally the multi-stage build succeeded once (with the sandbox's proxy CA injected into a scratch copy of the Dockerfile; the committed one is unchanged), but the container run could not be repeated here because Docker Hub rate-limited anonymous pulls (429). `docker compose config` validates; `docker compose up` was not exercised (nothing listens yet).
+
+**Update (M2):** compose now uses `restart: unless-stopped`, the healthcheck also checks the heartbeat, see decision 012.
