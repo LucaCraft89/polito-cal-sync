@@ -48,10 +48,11 @@ Open `.env` in an editor and fill in only these (no quotes, no spaces around `=`
 GOOGLE_CLIENT_ID=<the client id from step 1>
 GOOGLE_CLIENT_SECRET=<the client secret from step 1>
 SOURCE_POLITO_ICS_URLS=<your calendar feed URL>
-DATA_DIR=./data
 ```
 
 - **Where the ICS URL goes:** `SOURCE_POLITO_ICS_URLS`. Several courses: separate the URLs with commas, no spaces needed (`https://a/x.ics,https://b/y.ics`). The URL can contain a secret token, so it lives only in `.env` (git-ignored). The program never prints or logs it; messages say `feed #1 (host)`.
+- Leave `DATA_DIR` unset (it defaults to `./data`; `/data` only exists inside Docker and gives `E_DATA_DIR_NOT_WRITABLE` on your machine).
+- A Moodle calendar export URL (Moodle: Calendar -> Import/export -> Export calendar) also works here: it is an ICS feed. Confirmed with a real dry run (16 events).
 - Keep `SYNC_INTERVAL_MINUTES=60` (the minimum allowed is 15).
 - `.env` must never be committed; `pnpm check` scans for that.
 
