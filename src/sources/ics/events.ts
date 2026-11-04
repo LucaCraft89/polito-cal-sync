@@ -152,11 +152,22 @@ function safeUrl(raw: string | undefined): string | undefined {
   return proto === 'http:' || proto === 'https:' ? raw : undefined;
 }
 
+/** First value of the first CATEGORIES property (Moodle puts the course code there). Opaque key. */
+function courseKey(c: IcsComponent): string | undefined {
+  const raw = firstProp(c, 'CATEGORIES')?.value;
+  if (!raw) return undefined;
+  // Values are comma separated; "\\," is an escaped comma inside one value.
+  const first = raw.split(/(?<!\\),/)[0];
+  const key = first ? unescapeText(first).trim().slice(0, 200) : '';
+  return key || undefined;
+}
+
 function toDraft(c: IcsComponent, t: Times, sourceId: string): EventDraft {
   const title = (text(c, 'SUMMARY') ?? '').slice(0, 300) || '(no title)';
   const location = text(c, 'LOCATION')?.slice(0, 1000);
   const description = text(c, 'DESCRIPTION')?.slice(0, 20_000);
   const url = safeUrl(firstProp(c, 'URL')?.value.trim());
+  const course = courseKey(c);
   const iso = (ms: number) => new Date(ms).toISOString();
   return {
     source: SOURCE,
@@ -169,6 +180,7 @@ function toDraft(c: IcsComponent, t: Times, sourceId: string): EventDraft {
     ...(location ? { location } : {}),
     ...(description ? { description } : {}),
     ...(url ? { url } : {}),
+    ...(course ? { course } : {}),
   };
 }
 

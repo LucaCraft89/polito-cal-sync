@@ -38,6 +38,7 @@ export function googleEventId(source: string, sourceId: string): string {
   return base32hex(createHash('sha1').update(`${source}:${sourceId}`).digest());
 }
 
+/** `course` is routing information, not content: it is deliberately left out of the hash. */
 function contentHash(e: Omit<CanonicalEvent, 'hash'>): string {
   const content = [
     e.kind,
@@ -88,6 +89,7 @@ export function toCanonical(draft: EventDraft): CanonicalEvent {
     ...(e.location ? { location: e.location } : {}),
     ...(e.url ? { url: e.url } : {}),
     ...(e.description ? { description: truncate(e.description, DESCRIPTION_LIMIT) } : {}),
+    ...(e.course ? { course: e.course } : {}),
   };
   return { ...base, hash: contentHash(base) };
 }

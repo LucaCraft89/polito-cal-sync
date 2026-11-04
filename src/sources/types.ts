@@ -45,6 +45,7 @@ export const eventDraftSchema = z
     location: optionalText(1000),
     url: z.url().max(1000).optional(),
     description: optionalText(20_000),
+    course: optionalText(200),
   })
   .superRefine((e, ctx) => {
     const valid = e.allDay ? isValidDateOnly : isValidDateTime;
@@ -79,6 +80,11 @@ export interface CanonicalEvent {
   location?: string;
   url?: string;
   description?: string;
+  /**
+   * Opaque key of the course this event belongs to (ICS `CATEGORIES`, Polito course id). Used later to
+   * route events to per-course calendars (decision 013). NOT part of the content hash and not parsed.
+   */
+  course?: string;
   /** sha256 of the content fields; identity fields (source, sourceId) are not part of it. */
   hash: string;
 }
