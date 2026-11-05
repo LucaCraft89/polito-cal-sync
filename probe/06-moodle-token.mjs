@@ -96,7 +96,6 @@ async function send(method, url, form, headers = {}) {
 }
 
 let token;
-let privateTokenPresent = false;
 try {
   let method = 'GET';
   let form;
@@ -112,10 +111,9 @@ try {
         const raw = loc.slice('moodlemobile://'.length).replace(/^token=/, '');
         const parts = Buffer.from(decodeURIComponent(raw), 'base64').toString('utf8').split(':::');
         token = parts[1];
-        privateTokenPresent = parts.length > 2;
         report.tokenReceived = Boolean(token);
         report.tokenLength = token?.length ?? 0;
-        report.privateTokenPresent = privateTokenPresent;
+        report.privateTokenPresent = parts.length > 2;
         break;
       }
       const target = new URL(loc, url);
@@ -160,7 +158,7 @@ try {
     if (m) {
       const parts = Buffer.from(decodeURIComponent(m[1]), 'base64').toString('utf8').split(':::');
       token = parts[1];
-      privateTokenPresent = parts.length > 2;
+      report.privateTokenPresent = parts.length > 2;
       report.tokenReceived = Boolean(token);
       report.tokenInPageLink = true;
       break;
