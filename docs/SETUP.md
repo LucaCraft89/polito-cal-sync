@@ -70,7 +70,7 @@ Checks the data folder, the clock, the history database, the Google login and ca
 
 ## Moodle
 
-The Moodle calendar export link is a plain calendar feed, so it works as a source, but it only contains what Moodle puts in the export. If it seems to miss events: in Moodle's "Import or export calendars", export again with **Events to export: All** and **Time period: Recent and next 60 days** (a "Custom range" is a fixed window). A deeper route through Moodle's mobile web service exists on paper and is being probed (`probe/06-moodle-token.mjs`, `docs/decisions/031-moodle-web-service-route.md`); it is not built.
+The Moodle calendar export link is a plain calendar feed, so it works as a source, but it only contains what Moodle puts in the export, and **it is not complete**: measured on one account (decision 034), the export holds events from the start of the current month only (the "Recent and next 60 days" and "This month" choices end after about 15 days; **"Custom range" reaches about a year ahead and is the best choice**), and the Moodle calendar page shows more events than the export contains. A route through Moodle's mobile web service works (no MFA; `probe/06`, `07`) and a source built on it is planned (`docs/decisions/033`, `034`); it is not built yet.
 
 ## Limits to know
 

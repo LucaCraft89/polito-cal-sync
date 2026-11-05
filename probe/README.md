@@ -89,6 +89,14 @@ node probe/07-moodle-events.mjs
 
 Same login as step 6. Then it asks the web service for **all** your calendar events from 30 days back to 180 days ahead, downloads your own calendar export link in three variants (`recentupcoming`, `monthnow`, `custom`; the link needs no login, it is the one Moodle shows you), and compares the two by event id. At most 50 requests, 1.5 s apart, only `moodle.polito.it` and `idp.polito.it`. It writes `probe/out/07-moodle-events.json`: counts per event type, module and month, which events only the web service has, and the shapes. No token, no titles, no names. Send back only that file.
 
+### 8. Moodle: the month view shows more than the export (asks for your password)
+
+```bash
+node probe/08-moodle-monthly.mjs
+```
+
+Same login as steps 6 and 7. Reads the calendar **month view** (what the Moodle page shows) for 8 months, the event query and your export link (custom range), and compares the three by event id. At most 50 requests, 1.5 s apart, only `moodle.polito.it` and `idp.polito.it`. It writes `probe/out/08-moodle-monthly.json`: counts per module, event type, component and course for the events that only the month view has. No token, no titles, no names. Send back only that file.
+
 ## Before you send anything back (checklist)
 
 - [ ] Open every file in `probe/out/sanitized/`. Do you recognise a real course name, teacher, room, email, matricola, link? If yes: do **not** send it; tell the assistant which field name (not the value) still leaks.
