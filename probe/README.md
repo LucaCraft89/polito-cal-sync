@@ -81,6 +81,14 @@ node probe/06-moodle-token.mjs
 
 Does what the Moodle app does: opens `moodle.polito.it/admin/tool/mobile/launch.php`, follows the redirects to the university identity provider, submits your username and password **once**, forwards the SAML answer back, and takes the token the app would get from the final redirect. With that token (held in memory, never printed or saved) it makes a handful of **read-only** web-service calls about your own calendar, courses and assignments. At most 40 requests, 1.5 s apart, only to `moodle.polito.it` and `idp.polito.it`; any extra IdP step or a 429 stops it. It writes `probe/out/06-moodle-token.json`: the **shapes** of the answers (key names, types, counts), which functions the service allows, and the sets of event types and module names. No token, no cookie values, no titles or names. Send back only that file.
 
+### 7. Moodle: what the export link misses (asks for your password)
+
+```bash
+node probe/07-moodle-events.mjs
+```
+
+Same login as step 6. Then it asks the web service for **all** your calendar events from 30 days back to 180 days ahead, downloads your own calendar export link in three variants (`recentupcoming`, `monthnow`, `custom`; the link needs no login, it is the one Moodle shows you), and compares the two by event id. At most 50 requests, 1.5 s apart, only `moodle.polito.it` and `idp.polito.it`. It writes `probe/out/07-moodle-events.json`: counts per event type, module and month, which events only the web service has, and the shapes. No token, no titles, no names. Send back only that file.
+
 ## Before you send anything back (checklist)
 
 - [ ] Open every file in `probe/out/sanitized/`. Do you recognise a real course name, teacher, room, email, matricola, link? If yes: do **not** send it; tell the assistant which field name (not the value) still leaks.
