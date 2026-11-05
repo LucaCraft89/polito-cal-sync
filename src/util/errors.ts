@@ -49,6 +49,9 @@ export const ERROR_CODES = [
   'E_UI_SETUP_STATE',
   'E_UI_PASSPHRASE_WEAK',
   'E_UI_NOT_FOUND',
+  'E_UI_PREVIEW_BUSY',
+  'E_UI_PREVIEW_RATE_LIMITED',
+  'E_UI_UNREACHABLE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

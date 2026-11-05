@@ -1,0 +1,629 @@
+/* Components: vanilla, accessible, token-driven. Interactive targets are at least 48 px. */
+
+/* Icons: inline SVG drawn by dom.js with currentColor. */
+.icon {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Buttons (state layer = ::after) */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 var(--s-5);
+  border: 0;
+  border-radius: var(--r-full);
+  font: 600 0.9375rem/1.2 var(--font);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--c-primary);
+  transition:
+    border-radius var(--dur-medium) var(--ease-spatial),
+    box-shadow var(--dur-short) var(--ease-effects);
+}
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-effects);
+  pointer-events: none;
+}
+.btn:hover::after {
+  opacity: 0.08;
+}
+.btn:active::after {
+  opacity: 0.12;
+}
+.btn:active {
+  border-radius: var(--r-md);
+}
+.btn[disabled],
+.btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-filled {
+  background: var(--c-primary);
+  color: var(--c-on-primary);
+}
+.btn-tonal {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+}
+.btn-outlined {
+  box-shadow: inset 0 0 0 1px var(--c-outline);
+}
+.btn-danger {
+  background: var(--c-error);
+  color: var(--c-on-error);
+}
+.btn-text {
+  padding: 0 var(--s-4);
+}
+.btn-icon {
+  padding: 0;
+  width: 48px;
+  color: var(--c-on-surface-variant);
+}
+.btn-block {
+  width: 100%;
+}
+.btn-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.btn-group .btn {
+  border-radius: var(--r-xs);
+}
+.btn-group .btn:first-child {
+  border-radius: var(--r-full) var(--r-xs) var(--r-xs) var(--r-full);
+}
+.btn-group .btn:last-child {
+  border-radius: var(--r-xs) var(--r-full) var(--r-full) var(--r-xs);
+}
+.btn-group .btn:only-child {
+  border-radius: var(--r-full);
+}
+
+/* The one floating action button of a page (the main action). Extended form: icon and word. */
+.fab {
+  position: fixed;
+  right: max(var(--s-4), env(safe-area-inset-right));
+  bottom: calc(var(--nav-h) + var(--s-4));
+  z-index: 25;
+  min-height: 56px;
+  padding: 0 var(--s-5);
+  border-radius: var(--r-leaf);
+  box-shadow: var(--elev-3);
+  background: var(--c-primary-container);
+  color: var(--c-on-primary-container);
+  animation: pop var(--dur-long) var(--ease-spatial) both;
+}
+.fab:active {
+  border-radius: var(--r-xl);
+}
+@keyframes pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (min-width: 600px) {
+  .fab {
+    bottom: var(--s-5);
+    right: var(--s-5);
+  }
+}
+
+/* Cards */
+.card {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-xl);
+  background: var(--c-surface-container);
+  color: var(--c-on-surface);
+  min-width: 0;
+}
+.card-outlined {
+  background: var(--c-surface);
+  box-shadow: inset 0 0 0 1px var(--c-outline-variant);
+}
+.card-elevated {
+  background: var(--c-surface-container-low);
+  box-shadow: var(--elev-1);
+}
+.card h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  justify-content: flex-end;
+}
+
+/* Form fields */
+.field {
+  display: grid;
+  gap: var(--s-1);
+}
+.field > label,
+.field-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--c-on-surface-variant);
+}
+.input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-on-surface);
+  box-shadow: inset 0 0 0 1px var(--c-outline);
+  font: 400 1rem/1.4 var(--font);
+  transition: box-shadow var(--dur-short) var(--ease-effects);
+}
+.input:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--c-primary);
+}
+.input[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 2px var(--c-error);
+}
+.input[disabled],
+.input[readonly] {
+  background: var(--c-surface-container-high);
+}
+.field-help {
+  font-size: 0.8125rem;
+  color: var(--c-on-surface-variant);
+}
+.field-error {
+  display: flex;
+  gap: var(--s-1);
+  align-items: flex-start;
+  font-size: 0.8125rem;
+  color: var(--c-error);
+  font-weight: 500;
+}
+.field-error .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Switch: a checkbox with role="switch"; the label row is the touch target. */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 56px;
+  cursor: pointer;
+}
+.switch-row .switch-text {
+  display: grid;
+  min-width: 0;
+}
+.switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-full);
+  background: var(--c-surface-container-highest);
+  box-shadow: inset 0 0 0 2px var(--c-outline);
+  transition: background-color var(--dur-short) var(--ease-effects);
+}
+.switch .thumb {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-full);
+  background: var(--c-outline);
+  transition:
+    transform var(--dur-medium) var(--ease-spatial),
+    width var(--dur-short) var(--ease-effects),
+    height var(--dur-short) var(--ease-effects),
+    top var(--dur-short) var(--ease-effects),
+    left var(--dur-short) var(--ease-effects),
+    background-color var(--dur-short) var(--ease-effects);
+}
+.switch input:checked ~ .track {
+  background: var(--c-primary);
+  box-shadow: none;
+}
+.switch input:checked ~ .thumb {
+  transform: translateX(20px);
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: var(--c-on-primary);
+}
+.switch input:focus-visible ~ .track {
+  outline: 3px solid var(--c-primary);
+  outline-offset: 2px;
+}
+.switch input:disabled ~ .track,
+.switch input:disabled ~ .thumb {
+  opacity: 0.45;
+}
+
+/* Segmented control: radios in a row, each at least 48 px tall. */
+.segmented {
+  display: flex;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.segmented legend {
+  padding: 0;
+  margin-bottom: var(--s-1);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--c-on-surface-variant);
+}
+.segmented .seg {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.segmented input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.segmented .seg span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-1);
+  min-height: 48px;
+  padding: 0 var(--s-3);
+  font-weight: 500;
+  text-align: center;
+  box-shadow: inset 0 0 0 1px var(--c-outline);
+  transition: background-color var(--dur-short) var(--ease-effects);
+}
+.segmented .seg:first-child span {
+  border-radius: var(--r-full) 0 0 var(--r-full);
+}
+.segmented .seg:last-child span {
+  border-radius: 0 var(--r-full) var(--r-full) 0;
+}
+.segmented .seg:only-child span {
+  border-radius: var(--r-full);
+}
+.segmented input:checked + span {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+  font-weight: 700;
+}
+.segmented input:focus-visible + span {
+  outline: 3px solid var(--c-primary);
+  outline-offset: 2px;
+}
+.segmented input:disabled + span {
+  opacity: 0.45;
+}
+
+/* Chips. Status chips always carry an icon AND a word; colour is never the only signal. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  min-height: 32px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--c-surface-container-high);
+  color: var(--c-on-surface);
+}
+.chip .icon {
+  width: 18px;
+  height: 18px;
+}
+.chip-ok {
+  background: var(--c-success-container);
+  color: var(--c-on-success-container);
+}
+.chip-warn {
+  background: var(--c-warning-container);
+  color: var(--c-on-warning-container);
+}
+.chip-bad {
+  background: var(--c-error-container);
+  color: var(--c-on-error-container);
+}
+.chip-info {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+}
+button.chip-filter {
+  min-height: 48px;
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  font: 600 0.875rem/1 var(--font);
+  color: var(--c-on-surface-variant);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--c-outline);
+  cursor: pointer;
+}
+button.chip-filter[aria-pressed='true'] {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+  box-shadow: none;
+}
+
+/* Lists */
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 56px;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--c-outline-variant);
+}
+.list-item:last-child {
+  border-bottom: 0;
+}
+.list-item .grow {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+/* Banner: incomplete, paused, refused, ok. */
+.banner {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  padding: var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+}
+.banner .grow {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+.banner-warn {
+  background: var(--c-warning-container);
+  color: var(--c-on-warning-container);
+}
+.banner-bad {
+  background: var(--c-error-container);
+  color: var(--c-on-error-container);
+}
+.banner-ok {
+  background: var(--c-success-container);
+  color: var(--c-on-success-container);
+}
+.banner dl {
+  margin: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+.banner dt {
+  font-weight: 700;
+}
+.banner dd {
+  margin: 0;
+}
+
+/* Dialog */
+dialog.dialog {
+  width: min(100% - 2rem, 28rem);
+  padding: var(--s-5);
+  border: 0;
+  border-radius: var(--r-xl);
+  background: var(--c-surface-container-high);
+  color: var(--c-on-surface);
+  box-shadow: var(--elev-3);
+}
+dialog.dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+dialog.dialog[open] {
+  animation: pop var(--dur-medium) var(--ease-spatial-calm) both;
+}
+dialog.dialog h2 {
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin-bottom: var(--s-3);
+}
+
+/* Snackbar (live region) */
+.snackbar-region {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-h, 72px) + var(--s-3));
+  z-index: 60;
+  display: grid;
+  justify-items: center;
+  padding: 0 var(--s-4);
+  pointer-events: none;
+}
+.snackbar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 48px;
+  max-width: 36rem;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--c-inverse-surface);
+  color: var(--c-inverse-on-surface);
+  box-shadow: var(--elev-3);
+  animation: pop var(--dur-medium) var(--ease-spatial-calm) both;
+}
+.snackbar .btn {
+  color: var(--c-inverse-primary);
+}
+@media (min-width: 600px) {
+  .snackbar-region {
+    bottom: var(--s-5);
+  }
+}
+
+/* Progress and loading. The loader has a word next to it; motion is decoration only. */
+.progress {
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--c-surface-container-highest);
+  overflow: hidden;
+}
+.progress::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--c-primary);
+  animation: slide 1.4s var(--ease-effects) infinite;
+}
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.loader {
+  width: 40px;
+  height: 40px;
+  background: var(--c-primary);
+  border-radius: 50% 14% 50% 14%;
+  animation: morph 1.6s var(--ease-spatial-calm) infinite;
+}
+@keyframes morph {
+  0% {
+    transform: rotate(0deg);
+    border-radius: 50% 14% 50% 14%;
+  }
+  50% {
+    transform: rotate(180deg);
+    border-radius: 14% 50% 14% 50%;
+  }
+  100% {
+    transform: rotate(360deg);
+    border-radius: 50% 14% 50% 14%;
+  }
+}
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) 0;
+}
+
+/* Misc */
+.kv {
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+}
+.kv > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 32px;
+  align-items: center;
+}
+.kv dt {
+  color: var(--c-on-surface-variant);
+}
+.kv dd {
+  margin: 0;
+  font-weight: 500;
+  text-align: right;
+  min-width: 0;
+}
+.auth-card {
+  max-width: 28rem;
+  margin: var(--s-6) auto 0;
+}
+.strength {
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--c-surface-container-highest);
+  overflow: hidden;
+}
+.strength > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--c-warning);
+  transition: width var(--dur-medium) var(--ease-spatial-calm);
+}
+.strength[data-level='1'] > span {
+  width: 33%;
+}
+.strength[data-level='2'] > span {
+  width: 66%;
+  background: var(--c-primary);
+}
+.strength[data-level='3'] > span {
+  width: 100%;
+  background: var(--c-success);
+}

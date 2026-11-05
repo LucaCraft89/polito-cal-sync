@@ -215,6 +215,8 @@ const clipKey = (k: string): string => (/^[\w.]{1,60}$/.test(k) ? k : '(unreadab
 
 export interface SettingView {
   key: string;
+  /** The environment variable that overrides this setting (a name, never a value). */
+  env: string;
   source: 'env' | 'ui' | 'default';
   /** Set by an environment variable: shown, cannot be changed in the UI. */
   locked: boolean;
@@ -242,6 +244,7 @@ export function describeSettings(
     const source = envIsSet(env, f.env) ? 'env' : f.key in values ? 'ui' : 'default';
     const view: SettingView = {
       key: f.key,
+      env: f.env,
       source,
       locked: source === 'env',
       secret: f.secret,

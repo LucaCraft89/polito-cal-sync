@@ -267,3 +267,21 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **What happened:** there is nothing at the address that was requested.
 **Why:** the path is not part of the web UI API.
 **What to do:** check the address against `docs/UI.md`.
+
+## E_UI_PREVIEW_BUSY
+
+**What happened:** a preview was requested while another one is still running.
+**Why:** only one preview runs at a time, so the university and Google are not asked twice at once.
+**What to do:** wait for the running preview to finish; its result appears on the Preview page.
+
+## E_UI_PREVIEW_RATE_LIMITED
+
+**What happened:** a preview was requested less than 15 minutes after the last one, so no new one was started.
+**Why:** a preview logs in to the university portal and reads your calendar; limiting how often protects your account and your Google quota. The limit counts from the start of the last attempt, also when it failed.
+**What to do:** try again after the time the message gives. The last result stays visible on the Preview page.
+
+## E_UI_UNREACHABLE
+
+**What happened:** the page could not reach the program (the browser got no answer).
+**Why:** `serve` may have stopped or restarted, or the connection was lost.
+**What to do:** check that `serve` (or the container) is running, then reload the page.

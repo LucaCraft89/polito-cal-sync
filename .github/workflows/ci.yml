@@ -24,7 +24,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install the browser for the web UI tests
+        run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check
+        env:
+          REQUIRE_BROWSER: '1'
       - run: pnpm build
 
   docker:

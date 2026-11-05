@@ -25,6 +25,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# The web UI files (dist/web/static.js looks for them at ../../web, i.e. /app/web)
+COPY web ./web
 COPY package.json ./
 # /data is the only writable place: state, tokens and the sqlite db live here (mode 0600 files)
 RUN mkdir -p /data && chown node:node /data

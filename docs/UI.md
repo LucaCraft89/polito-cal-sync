@@ -2,7 +2,7 @@
 
 One local web page for everything that is today a line in `.env`, a command, or a decision file: connect Google, add sources, set the Polito login, exam calls and squads, preview what a sync would do, run it, and see what happened. It replaces hand-editing `.env` for settings, and it is the setup wizard of M5.
 
-Status: **step 1 of section 8 is built** (settings store, secured JSON API, auth, security tests; `UI_ENABLED=true`, no pages yet, decision 023). Everything else here is still specification. Milestone placement is in `docs/PLAN.md`; the decision records are `docs/decisions/021-web-ui-scope.md` and `023-settings-store-and-secured-api.md`.
+Status: **steps 1 and 2 of section 8 are built, step 3 is partly built** (decisions 023 to 026): settings store, secured JSON API, auth, security tests (`UI_ENABLED=true`); design tokens, components, app shell, responsive and accessibility tests; first-run passphrase, login, Overview, Sources, Settings and a Preview page over a dry-run endpoint (15-minute limit, single flight). **Not built yet:** Google connect and calendar picker, per-feed Test buttons, Sync now (and the typed confirmation), Courses page, History page, per-course calendars, the wizard beyond the passphrase. The decision records are `021-web-ui-scope.md`, `023-settings-store-and-secured-api.md`, `024-web-ui-design-system-and-shell.md`, `025-web-ui-pages.md`, `026-web-ui-preview.md`.
 
 ## 1. What it covers
 

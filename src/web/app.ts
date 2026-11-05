@@ -6,9 +6,12 @@ import { loadConfig } from '../config/index.js';
 import { AuditLog } from '../settings/audit.js';
 import { describeSettings } from '../settings/fields.js';
 import { SettingsStore } from '../settings/store.js';
+import type { RuntimeDeps } from '../sync/run.js';
 import { UserError } from '../util/errors.js';
 import { PassphraseStore, LoginThrottle, SessionStore, type Session } from './auth.js';
 import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http.js';
+import { PreviewService } from './preview.js';
+import { StaticFiles } from './static.js';
 
 export const SESSION_COOKIE = 'pcs_session';
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
@@ -25,12 +28,17 @@ export interface WebAppOptions {
   /** Test hooks. */
   passphraseCost?: number;
   now?: () => number;
+  /** Replaces Google, the portal and the clock in the preview (tests only). */
+  runDeps?: RuntimeDeps;
+  previewMinIntervalMs?: number;
+  /** The folder with the UI files; default is `web/` of the package. */
+  webRoot?: string;
   sessions?: SessionStore;
   throttle?: LoginThrottle;
 }
 
 export interface WebApp {
-  /** Answers `/api/*` and returns true; returns false for any other path (not ours). */
+  /** Answers `/api/*` and the UI files and returns true; returns false for any other path (not ours). */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
 }
 
@@ -62,6 +70,14 @@ const settingsBody = z
   .object({
     set: z.record(z.string(), z.unknown()).optional(),
     clear: z.array(z.string().max(100)).max(50).optional(),
+    /** Edit the feed list without ever seeing the addresses (they hold secret tokens). Indexes are 0-based. */
+    icsFeeds: z
+      .object({
+        add: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        remove: z.array(z.number().int().min(0).max(1000)).max(50).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -102,6 +118,52 @@ export function createWebApp(o: WebAppOptions): WebApp {
   const startSession = (): { cookie: string; csrf: string } => {
     const { id, session } = sessions.create();
     return { cookie: cookie(id, 12 * 3600), csrf: session.csrf };
+  };
+
+  const files = new StaticFiles(o.webRoot);
+  const now = o.now ?? Date.now;
+  const preview = new PreviewService({
+    dataDir: o.dataDir,
+    env: o.env,
+    settings,
+    logger: o.logger,
+    now,
+    ...(o.runDeps ? { deps: o.runDeps } : {}),
+    ...(o.previewMinIntervalMs !== undefined ? { minIntervalMs: o.previewMinIntervalMs } : {}),
+  });
+
+  /** Applies "add / remove a feed" to the saved list, so the browser never needs the addresses. */
+  const feedChange = (
+    change: z.infer<typeof settingsBody>,
+  ): { set?: Record<string, unknown>; clear?: string[] } => {
+    const { icsFeeds, set = {}, clear = [] } = change;
+    if (!icsFeeds) return { set, clear };
+    if ('icsUrls' in set || clear.includes('icsUrls')) {
+      throw refused(
+        'The request was refused: the feed list was changed in two ways at once.',
+        '"icsFeeds" and "icsUrls" cannot be used together.',
+        'Send one of them.',
+      );
+    }
+    const saved = settings.read()['icsUrls'];
+    const list = Array.isArray(saved)
+      ? saved.filter((u): u is string => typeof u === 'string')
+      : [];
+    const drop = new Set(icsFeeds.remove ?? []);
+    const missing = [...drop].filter((i) => i >= list.length);
+    if (missing.length > 0) {
+      throw new UserError({
+        code: 'E_SETTING_INVALID',
+        what: `Not saved: feed ${missing.map((i) => i + 1).join(', ')} does not exist.`,
+        why: 'The list changed since this page was loaded.',
+        action: 'Reload the page and try again.',
+      });
+    }
+    const next = list.filter((_, i) => !drop.has(i));
+    for (const u of icsFeeds.add ?? []) if (!next.includes(u)) next.push(u);
+    return next.length > 0
+      ? { set: { ...set, icsUrls: next }, clear }
+      : { set, clear: [...clear, 'icsUrls'] };
   };
 
   const sessionState = () => ({
@@ -230,7 +292,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
       auth: true,
       json: true,
       run: (c) => {
-        const change = parseBody(settingsBody, c.body);
+        const change = feedChange(parseBody(settingsBody, c.body));
         const changed = settings.apply(change, o.env);
         log.info({ changed }, 'ui settings saved');
         const values = settings.read();
@@ -240,6 +302,20 @@ export function createWebApp(o: WebAppOptions): WebApp {
           body: { changed, settings: describeSettings(o.env, values, config) },
         };
       },
+    },
+    {
+      method: 'GET',
+      path: '/api/preview',
+      auth: true,
+      json: false,
+      run: () => ({ status: 200, body: preview.latest }),
+    },
+    {
+      method: 'POST',
+      path: '/api/preview',
+      auth: true,
+      json: true,
+      run: async () => ({ status: 200, body: await preview.run() }),
     },
     {
       method: 'GET',
@@ -256,6 +332,14 @@ export function createWebApp(o: WebAppOptions): WebApp {
     },
   ];
 
+  const hostRefused = () =>
+    new UserError({
+      code: 'E_UI_HOST_REFUSED',
+      what: 'This address is not allowed.',
+      why: 'The Host header is not localhost. This stops web pages from reaching the UI through your browser (DNS rebinding).',
+      action:
+        'Open the UI as http://localhost:<port>. To use another name, add it to UI_ALLOWED_HOSTS.',
+    });
   const setupFirst = () =>
     new UserError({
       code: 'E_UI_SETUP_STATE',
@@ -311,15 +395,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
     path: string,
     query: URLSearchParams,
   ): Promise<Reply> {
-    if (!allowed.has(hostName(req))) {
-      throw new UserError({
-        code: 'E_UI_HOST_REFUSED',
-        what: 'This address is not allowed.',
-        why: 'The Host header is not localhost. This stops web pages from reaching the UI through your browser (DNS rebinding).',
-        action:
-          'Open the UI as http://localhost:<port>. To use another name, add it to UI_ALLOWED_HOSTS.',
-      });
-    }
+    if (!allowed.has(hostName(req))) throw hostRefused();
     const matches = routes.filter((r) => r.path === path);
     if (matches.length === 0) {
       throw new UserError({
@@ -371,7 +447,15 @@ export function createWebApp(o: WebAppOptions): WebApp {
   return {
     async handle(req, res) {
       const url = new URL(req.url ?? '/', 'http://placeholder.invalid');
-      if (!url.pathname.startsWith('/api/')) return false;
+      if (!url.pathname.startsWith('/api/')) {
+        // The UI files. Unknown paths fall through to the status page.
+        if (!files.has(url.pathname)) return false;
+        if (!allowed.has(hostName(req))) {
+          send(res, errorReply(hostRefused()));
+          return true;
+        }
+        return files.serve(req, res, url.pathname);
+      }
       const hsts: Record<string, string> = o.https
         ? { 'Strict-Transport-Security': 'max-age=31536000' }
         : {};

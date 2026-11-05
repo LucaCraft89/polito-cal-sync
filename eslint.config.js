@@ -40,6 +40,27 @@ export default tseslint.config(
     },
     rules: { 'no-console': 'off' },
   },
+  // The browser side of the web UI: plain ES modules, not part of the TypeScript project.
+  { files: ['web/**/*.js'], ...tseslint.configs.disableTypeChecked },
+  {
+    files: ['web/**/*.js'],
+    languageOptions: {
+      parserOptions: { projectService: false },
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        location: 'readonly',
+        localStorage: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        Intl: 'readonly',
+        URL: 'readonly',
+      },
+    },
+    rules: { 'no-console': 'error' },
+  },
   { files: ['eslint.config.js'], ...tseslint.configs.disableTypeChecked },
   prettier,
 );

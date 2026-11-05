@@ -1,0 +1,12 @@
+# 025 Web UI pages: first run, login, Overview, Sources, Settings (M5 step 3, first part)
+
+**Decided**
+
+- **Router:** hash routes (`#/overview`, `#/preview`, `#/sources`, `#/settings`) inside one `index.html`; the first-run page, login and the app are views of the same shell. A 401 from any call ends the session and shows the login again. The CSRF token is kept in memory only.
+- **First run:** passphrase + confirmation, strength bar (length-based hint; the real rules, 12 characters and at least 5 distinct, are the server's and its three-line error is shown). **Login:** wrong passphrase shows the server's three-line error (throttling included).
+- **Overview:** setup checklist from the settings (a source is on, Polito login saved, Google client saved) and "Last sync" from `/status` (health, last/next run, counts, last error code). It says plainly that **connecting a Google account is still the `auth google` command**: there is no connect button yet.
+- **Sources:** Polito portal (switch, username, write-only password with Replace/Clear, exam calls booked/all, squads as `course=squad` text), calendar feeds (list of host only, Remove with confirmation, Add; the address is write-only because it holds a token), Moodle address. Each card saves with its own button, all-or-nothing, server errors shown in the three-line form. **Settings:** time zone, interval, deletion limit (shown in %), Google client id + write-only secret, theme, change passphrase, log out, recent changes (audit log, no secret values).
+- **Locked settings** (set by an environment variable) are disabled and name the variable. For this the settings view now carries `env` (the variable's name; never a value).
+- **Feed list editing without seeing the addresses:** `PUT /api/settings` accepts `icsFeeds: {add: [...], remove: [index...]}` (0-based) instead of the whole list; the server applies it to the saved list, refuses unknown indexes (`E_SETTING_INVALID`), refuses `icsFeeds` together with `icsUrls`, and removing the last feed clears the setting. Env-locked lists are refused (`E_SETTING_LOCKED`).
+- **Stored XSS (deferred by decision 023):** browser tests put `"><img src=x onerror=...>` in the username and in an event title (through the preview) and check that it appears as text, no element is created, nothing runs, and a CSP violation would fail the test.
+- **Not built:** Google connect, per-feed Test buttons, Courses page, history page, first-run wizard steps beyond the passphrase, per-course calendars (these are the next M5 steps).

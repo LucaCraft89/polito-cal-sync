@@ -1,0 +1,12 @@
+# 026 Preview endpoint (dry run) and its rules
+
+**Decided**
+
+- `POST /api/preview` runs `runConfiguredSync(..., {dryRun: true})`: it reads the sources and the calendar and **writes nothing** (no event, no history row; a test asserts that no insert/patch/delete reaches the fake Google). `GET /api/preview` returns the last result (kept in memory only; lost on restart) and when the next one is allowed. Both need a session; POST needs the CSRF token and a same-origin Origin like every change.
+- **Single flight** in this process (`E_UI_PREVIEW_BUSY`, 409). Decision 012 says dry runs take no run lock, and a preview only reads, so it does not take it; the **Sync-now endpoint (not built) will use the run lock**.
+- **Rate limit: one preview per 15 minutes** (`E_UI_PREVIEW_RATE_LIMITED`, 429), counted from the **start of the last attempt**, so a failed attempt also counts: a wrong login or a flaky network cannot turn the page into a retry loop against the university (the login latch of decision 018 still applies underneath). A refused request costs no traffic. Consequence for the owner: after changing a setting you wait up to 15 minutes for a new preview; the last result stays visible. This is deliberate (UI.md section 4) and cheap to relax with `previewMinIntervalMs`.
+- **Needs Google read access.** The plan compares with the calendar, so without a connected Google account the preview answers `E_NOT_CONFIGURED` ("Google is not connected yet"), as `sync --dry-run` does. A "preview without Google" (all creates) was not built: it would show deletions as zero when it cannot know.
+- **Result** (`src/web/preview.ts`): counts, safety line (deletes vs limit, `exceeded`), whether every source was complete, notes from sources, problems in the three-line form with code and docs reference (feed and source errors), and the event lists (title, kind, start/end, place, course name when known). Event text is untrusted and shown as text only. Error text is passed through the secret redaction; feed addresses never appear.
+- **Not built, on purpose:** `POST /api/sync` (Sync now), typed confirmation beyond the deletion limit. They wait for the owner's go-ahead.
+
+**Tests:** `test/web-static.test.ts` (auth and CSRF, plan, no writes, no secrets in answer or log, 15-minute limit with an injected clock, failed attempt counts, single flight with a gated fake Google, nothing configured), browser tests for the page (including the limit message with the previous result kept).
