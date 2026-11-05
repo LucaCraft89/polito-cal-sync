@@ -520,6 +520,9 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
     await waitPage(page, 'To add (2)');
     const shown = await page.locator('main .list-item .t-label').allTextContents();
     expect(shown).toContain(XSS_TITLE);
+    // the enabled Polito source was attempted only through the offline fake
+    expect(world.portalAttempts.length).toBeGreaterThan(0);
+    expect(world.portalAttempts.every((u) => u.startsWith('https://'))).toBe(true);
     expect(await page.locator('main img').count()).toBe(0);
     expect(await page.locator('main [onerror]').count()).toBe(0);
     expect(

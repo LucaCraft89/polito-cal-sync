@@ -27,15 +27,28 @@ export function previewWorld(
 ) {
   const api = new MemoryEventsApi();
   const fetched: string[] = [];
+  const portalAttempts: string[] = [];
   const deps: RuntimeDeps = {
     now: () => NOW,
     pauseBetweenFeedsMs: 0,
     sleep: () => Promise.resolve(),
+    // The tests never contact the real university portal (CI has network access): an enabled Polito source
+    // fails at once, offline, with its normal "no connection" error.
+    politoPortal: {
+      fetchImpl: (url) => {
+        portalAttempts.push(
+          typeof url === 'string' ? url : url instanceof URL ? url.href : url.url,
+        );
+        return Promise.reject(new Error('offline: tests never reach the real portal'));
+      },
+      pauseMs: 0,
+      sleep: () => Promise.resolve(),
+    },
     googleFactory: () => Promise.resolve({ api, calendarId: CAL_ID }),
     fetchImpl: (url) => {
       fetched.push(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
       return Promise.resolve(new Response(feedText(), { status: 200 }));
     },
   };
-  return { api, deps, fetched };
+  return { api, deps, fetched, portalAttempts };
 }
