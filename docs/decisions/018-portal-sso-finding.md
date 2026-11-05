@@ -18,3 +18,11 @@
 - **Not yet decided:** reusing the 90-day IdP session cookie between runs (fewer password logins; but it is a long-lived credential on disk in `DATA_DIR`, 0600). Cost today: a full login (13 requests) plus one data request per sync interval.
 - **Remains true:** the source is disabled by default, fails closed (`complete: false` on any mismatch, no deletions), and never touches ICS events.
 - **Risk to state in the README when it ships:** this logs in with the student's password the way a browser does; it is not an advertised API, it may break when the portal changes, and a new "device" can trigger MFA at any time (then the source stops with `E_POLITO_LOGIN_EXTRA_STEP`).
+
+## Second environment: login from another network (2026-11-05)
+
+The owner allowed one live check from the build sandbox (a different network and machine, no browser state, no cookies). The same login client, run once with the owner's credentials passed through the environment of that single command (nothing stored, nothing printed), **logged in without any MFA or extra step** and read `getStudentData` (`success: true`, 15 sections). The source came out `complete: true` with 0 issues on every section (a snapshot one day after the owner's run: more lectures and calls because the window moved), 47 events with booked-only exams, and the squads note appeared. Two logins were made (one to inspect the formats, one through the source), about 26 requests.
+
+What this settles: a **new network / new "device" is not asked for MFA** (the open caveat in this decision). What it does not: whether that stays true over time, from other networks, or after the IdP's 90-day trust window; the source still stops with `E_POLITO_LOGIN_EXTRA_STEP` if it ever changes. Format check from the live document: lecture times carry an offset; exam-call and booking-window times carry none (consistent with reading them in `TZ`); the booked status value is `booked`. Agenda types seen: `TASSE`, `LEZIONI`, `ESAMI`, one other.
+
+Note for running Node behind this sandbox's proxy: `fetch` ignores the proxy unless `NODE_USE_ENV_PROXY=1` (and `NODE_EXTRA_CA_CERTS`) are set; a service behind a corporate proxy would need the same. Not a code bug.
