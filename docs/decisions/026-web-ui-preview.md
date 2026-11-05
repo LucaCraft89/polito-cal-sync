@@ -10,3 +10,7 @@
 - **Not built, on purpose:** `POST /api/sync` (Sync now), typed confirmation beyond the deletion limit. They wait for the owner's go-ahead.
 
 **Tests:** `test/web-static.test.ts` (auth and CSRF, plan, no writes, no secrets in answer or log, 15-minute limit with an injected clock, failed attempt counts, single flight with a gated fake Google, nothing configured), browser tests for the page (including the limit message with the previous result kept).
+
+## Live check (read-only, 2026-11-05)
+
+One portal login through the real HTTP endpoint (`POST /api/preview` against the real `didattica.polito.it` and `idp.polito.it`; Google replaced by the in-memory fake, so nothing real was written anywhere; temp data folder, deleted afterwards). Owner's setup: Europe/Rome, squads 309865=A, 309885=A, 309742=2, booked exam calls. Result: HTTP 200, **all sources complete, 0 problems, no MFA step**, 39 events to add (26 lecture, 6 exam_call, 5 deadline, 1 exam, 1 booking), 23 of them with a course name, safety line not exceeded. The password was in neither the answer nor the log; no write reached the fake calendar; an immediate second request was refused with `E_UI_PREVIEW_RATE_LIMITED` (429) without contacting the portal. The same 39 events as the CLI dry run of the day before.
