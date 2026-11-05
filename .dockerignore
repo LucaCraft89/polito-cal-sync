@@ -6,7 +6,8 @@ data
 coverage
 probe
 test
-docs
+docs/*
+!docs/ERRORS.md
 .env
 .env.*
 !.env.example
