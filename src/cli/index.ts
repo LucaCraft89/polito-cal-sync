@@ -236,7 +236,7 @@ async function authCommand(
     ...(pick ? { pickId: pick } : {}),
     ...(values['calendar-name'] ? { name: values['calendar-name'] } : {}),
   });
-  new CalendarChoice(config.dataDir).write(chosen.id);
+  new CalendarChoice(config.dataDir).write(chosen.id, chosen.summary);
   const verb = { created: 'Created', reused: 'Found and will reuse', picked: 'Using' }[
     chosen.action
   ];

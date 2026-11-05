@@ -99,6 +99,16 @@ const envSchema = z.object({
   ),
   POLITO_USERNAME: z.preprocess(emptyToUndefined, z.string().optional()),
   POLITO_PASSWORD: z.preprocess(emptyToUndefined, z.string().optional()),
+  GOOGLE_AUTH_PORT: z.preprocess(
+    emptyToUndefined,
+    z.coerce
+      .number()
+      .int('must be a whole number')
+      .min(0, 'must be 0 (any free port) or a port number')
+      .max(65535, 'must be a port number')
+      .default(0),
+  ),
+  GOOGLE_AUTH_BIND: z.preprocess(emptyToUndefined, z.string().default('127.0.0.1')),
   STATUS_PORT: z.preprocess(
     emptyToUndefined,
     z.coerce
@@ -163,7 +173,14 @@ export interface Config {
   syncIntervalMinutes: number;
   deleteThreshold: number;
   logLevel: z.infer<typeof envSchema>['LOG_LEVEL'];
-  google: { clientId?: string; clientSecret?: string; calendarId?: string };
+  google: {
+    clientId?: string;
+    clientSecret?: string;
+    calendarId?: string;
+    /** Where the "Connect Google" button of the UI listens for Google's redirect (0 = a free port). */
+    authPort: number;
+    authBind: string;
+  };
   /** Per-course / feed ICS URLs. They may embed a secret token: never log or print them. */
   icsUrls: string[];
   /** The Polito student portal source (decision 018). Off by default. The password is a secret: never log it. */
@@ -238,7 +255,10 @@ export function loadConfig(
     });
   }
   const v = parsed.data;
-  const google: Config['google'] = {};
+  const google: Config['google'] = {
+    authPort: v.GOOGLE_AUTH_PORT,
+    authBind: v.GOOGLE_AUTH_BIND,
+  };
   if (v.GOOGLE_CLIENT_ID !== undefined) google.clientId = v.GOOGLE_CLIENT_ID;
   if (v.GOOGLE_CLIENT_SECRET !== undefined) google.clientSecret = v.GOOGLE_CLIENT_SECRET;
   if (v.GOOGLE_CALENDAR_ID !== undefined) google.calendarId = v.GOOGLE_CALENDAR_ID;

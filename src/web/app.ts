@@ -10,6 +10,7 @@ import type { RuntimeDeps } from '../sync/run.js';
 import { UserError } from '../util/errors.js';
 import { PassphraseStore, LoginThrottle, SessionStore, type Session } from './auth.js';
 import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http.js';
+import { GoogleService, type GoogleDeps } from './google.js';
 import { PreviewService } from './preview.js';
 import { StaticFiles } from './static.js';
 
@@ -31,6 +32,10 @@ export interface WebAppOptions {
   /** Replaces Google, the portal and the clock in the preview (tests only). */
   runDeps?: RuntimeDeps;
   previewMinIntervalMs?: number;
+  /** Replaces the Google sign-in and calendar list (tests only). */
+  google?: GoogleDeps;
+  /** How long the Google sign-in waits for the browser (tests shorten it). */
+  googleConnectTimeoutMs?: number;
   /** The folder with the UI files; default is `web/` of the package. */
   webRoot?: string;
   sessions?: SessionStore;
@@ -66,6 +71,25 @@ const refused = (what: string, why: string, action: string): UserError =>
 
 const passphraseBody = z.object({ passphrase: z.string().max(1000) }).strict();
 const changeBody = z.object({ current: z.string().max(1000), next: z.string().max(1000) }).strict();
+const calendarBody = z.union([
+  z.object({ id: z.string().min(1).max(300) }).strict(),
+  z
+    .object({
+      create: z
+        .object({
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(100)
+            // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+            .regex(/^[^\u0000-\u001f\u007f]+$/)
+            .optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
 const settingsBody = z
   .object({
     set: z.record(z.string(), z.unknown()).optional(),
@@ -130,6 +154,18 @@ export function createWebApp(o: WebAppOptions): WebApp {
     now,
     ...(o.runDeps ? { deps: o.runDeps } : {}),
     ...(o.previewMinIntervalMs !== undefined ? { minIntervalMs: o.previewMinIntervalMs } : {}),
+  });
+
+  const googleService = new GoogleService({
+    dataDir: o.dataDir,
+    env: o.env,
+    settings,
+    audit,
+    logger: o.logger,
+    ...(o.google ? { deps: o.google } : {}),
+    ...(o.googleConnectTimeoutMs !== undefined
+      ? { connectTimeoutMs: o.googleConnectTimeoutMs }
+      : {}),
   });
 
   /** Applies "add / remove a feed" to the saved list, so the browser never needs the addresses. */
@@ -316,6 +352,44 @@ export function createWebApp(o: WebAppOptions): WebApp {
       auth: true,
       json: true,
       run: async () => ({ status: 200, body: await preview.run() }),
+    },
+    {
+      method: 'GET',
+      path: '/api/google',
+      auth: true,
+      json: false,
+      run: () => ({ status: 200, body: googleService.status() }),
+    },
+    {
+      method: 'POST',
+      path: '/api/google/connect',
+      auth: true,
+      json: true,
+      run: async () => ({ status: 200, body: await googleService.startConnect() }),
+    },
+    {
+      method: 'POST',
+      path: '/api/google/connect/cancel',
+      auth: true,
+      json: true,
+      run: () => ({ status: 200, body: googleService.cancelConnect() }),
+    },
+    {
+      method: 'GET',
+      path: '/api/google/calendars',
+      auth: true,
+      json: false,
+      run: async () => ({ status: 200, body: await googleService.listCalendars() }),
+    },
+    {
+      method: 'POST',
+      path: '/api/google/calendar',
+      auth: true,
+      json: true,
+      run: async (c) => ({
+        status: 200,
+        body: await googleService.chooseCalendar(parseBody(calendarBody, c.body)),
+      }),
     },
     {
       method: 'GET',

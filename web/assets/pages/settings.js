@@ -1,6 +1,7 @@
 import { api, setCsrf } from '../api.js';
 import { button, errorBanner, h, icon, loading, nextId, toast, when } from '../dom.js';
 import { secretField, segmentedField, textField } from '../forms.js';
+import { googleCard } from './google.js';
 import { save } from './sources.js';
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
@@ -116,7 +117,7 @@ export async function renderSettings(rerender, onLoggedOut) {
     h('h2', { id: 'h-g', text: 'Google' }),
     h('p', {
       class: 'muted',
-      text: 'The client you created in the Google Cloud console. Connecting your account is still done with the "auth google" command (docs/M2-RUNBOOK.md); a button for it comes later.',
+      text: 'The client you created in the Google Cloud console (docs/M2-RUNBOOK.md). Connect your account in the next card.',
     }),
     cid.el,
     csecret.el,
@@ -260,6 +261,6 @@ export async function renderSettings(rerender, onLoggedOut) {
     h('p', { class: 'field-help' }, icon('lock'), ' Values of secrets are never recorded.'),
   );
 
-  body.replaceChildren(general, google, look, security, session, recent);
+  body.replaceChildren(general, google, googleCard(), look, security, session, recent);
   return page;
 }

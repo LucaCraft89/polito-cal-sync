@@ -63,7 +63,7 @@ export interface PreviewView {
 
 const clean = (s: string): string => redactSecrets(s);
 
-function problem(e: UserError, source?: string): ProblemView {
+export function problem(e: UserError, source?: string): ProblemView {
   return {
     ...(source ? { source } : {}),
     code: e.code,

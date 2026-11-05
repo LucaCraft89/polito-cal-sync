@@ -15,7 +15,7 @@ async function status() {
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
 
-function checklist(s) {
+function checklist(s, g) {
   const polito = s['polito.enabled']?.value === true;
   const feeds = s.icsUrls?.set ? s.icsUrls.value.length : 0;
   const items = [];
@@ -39,13 +39,29 @@ function checklist(s) {
       to: '#/sources',
     });
   }
-  const google = s['google.clientId']?.set && s['google.clientSecret']?.set;
+  const client = s['google.clientId']?.set && s['google.clientSecret']?.set;
   items.push({
-    ok: !!google,
+    ok: !!client,
     title: 'Google client saved',
-    text: google
-      ? 'Connecting your Google account is still done with the "auth google" command (see docs/M2-RUNBOOK.md).'
+    text: client
+      ? 'The client id and secret are set.'
       : 'Enter the Google client id and secret under Settings.',
+    to: '#/settings',
+  });
+  items.push({
+    ok: !!g?.connected,
+    title: 'Google account connected',
+    text: g?.connected
+      ? `Signed in${g.account ? ` as ${g.account}` : ''}.`
+      : 'Press Connect Google under Settings.',
+    to: '#/settings',
+  });
+  items.push({
+    ok: !!g?.calendar,
+    title: 'Dedicated calendar chosen',
+    text: g?.calendar
+      ? `Events go to ${g.calendar.name ? `"${g.calendar.name}"` : 'the calendar set by the environment'}.`
+      : 'Create or pick the calendar under Settings. It is never your main calendar.',
     to: '#/settings',
   });
   return items;
@@ -60,9 +76,13 @@ export async function renderOverview() {
   const body = h('div', { class: 'cards' }, loading('Loading…'));
   page.append(body);
   try {
-    const [{ settings }, st] = await Promise.all([api('GET', '/api/settings'), status()]);
+    const [{ settings }, st, g] = await Promise.all([
+      api('GET', '/api/settings'),
+      status(),
+      api('GET', '/api/google').catch(() => undefined),
+    ]);
     const s = byKey(settings);
-    const items = checklist(s);
+    const items = checklist(s, g);
     const cards = [];
 
     const run = h(

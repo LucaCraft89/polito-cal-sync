@@ -73,7 +73,7 @@ export function clientCredentials(g: { clientId?: string; clientSecret?: string 
       what: 'The Google OAuth client is not configured.',
       why: 'GOOGLE_CLIENT_ID and/or GOOGLE_CLIENT_SECRET is empty.',
       action:
-        'Create an OAuth client of type "Desktop app" in the Google Cloud console and put its id and secret in .env (steps: docs/M2-RUNBOOK.md).',
+        'Create an OAuth client of type "Desktop app" in the Google Cloud console and enter its id and secret on the Settings page of the web UI, or put them in .env (steps: docs/M2-RUNBOOK.md).',
     });
   }
   return { clientId: g.clientId, clientSecret: g.clientSecret };
@@ -126,7 +126,11 @@ export interface LoopbackOptions {
   port: number;
   timeoutMs: number;
   /** Receives the URL the user must open. */
-  announce(url: string): void;
+  announce(url: string, redirectUri: string): void;
+  /** Ends the wait early (the UI's cancel, shutdown); nothing is saved. */
+  signal?: AbortSignal;
+  /** Where the browser tab tells the user to go back to (default: the terminal). */
+  returnTo?: string;
 }
 
 const CALLBACK_PATH = '/oauth2callback';
@@ -158,6 +162,7 @@ export async function loopbackAuthorize(
   const { codeVerifier, codeChallenge } = await client.generateCodeVerifierAsync();
   if (!codeVerifier || !codeChallenge) throw authFailed('PKCE could not be prepared.', RETRY);
 
+  if (o.signal?.aborted) throw authFailed('The sign-in was cancelled.', RETRY);
   let server: Server | undefined;
   try {
     const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
@@ -201,7 +206,7 @@ export async function loopbackAuthorize(
           .end(
             page(
               'Done',
-              'Google is connected. You can close this tab and go back to the terminal.',
+              `Google is connected. You can close this tab and go back to ${o.returnTo ?? 'the terminal'}.`,
             ),
           );
         resolve({ code: c, redirectUri });
@@ -233,8 +238,14 @@ export async function loopbackAuthorize(
             code_challenge_method: 'S256' as Auth.CodeChallengeMethod,
             redirect_uri: redirectUri,
           }),
+          redirectUri,
         );
       });
+      o.signal?.addEventListener(
+        'abort',
+        () => reject(authFailed('The sign-in was cancelled.', RETRY)),
+        { once: true },
+      );
       setTimeout(
         () =>
           reject(

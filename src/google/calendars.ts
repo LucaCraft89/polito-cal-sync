@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { google, type Auth } from 'googleapis';
 import { UserError } from '../util/errors.js';
@@ -110,16 +110,49 @@ export class CalendarChoice {
   constructor(dataDir: string) {
     this.path = join(dataDir, 'google-calendar.json');
   }
+  private load(): { calendarId?: unknown; summary?: unknown } {
+    try {
+      return JSON.parse(readFileSync(this.path, 'utf8')) as { calendarId?: unknown };
+    } catch {
+      return {};
+    }
+  }
+  read(): string | undefined {
+    const v = this.load();
+    return typeof v.calendarId === 'string' && v.calendarId ? v.calendarId : undefined;
+  }
+  /** The calendar's name as it was when chosen (for display only; Google is the truth). */
+  readSummary(): string | undefined {
+    const v = this.load();
+    return this.read() && typeof v.summary === 'string' && v.summary ? v.summary : undefined;
+  }
+  write(calendarId: string, summary?: string): void {
+    writePrivateFile(this.path, JSON.stringify({ calendarId, ...(summary ? { summary } : {}) }));
+  }
+  clear(): void {
+    rmSync(this.path, { force: true });
+  }
+}
+
+/**
+ * Which Google account signed in (the id of its main calendar is its email address). Display only, and
+ * the way to notice that a new sign-in is another account, whose calendar choice must not be kept.
+ */
+export class AccountNote {
+  private readonly path: string;
+  constructor(dataDir: string) {
+    this.path = join(dataDir, 'google-account.json');
+  }
   read(): string | undefined {
     try {
-      const v = JSON.parse(readFileSync(this.path, 'utf8')) as { calendarId?: unknown };
-      return typeof v.calendarId === 'string' && v.calendarId ? v.calendarId : undefined;
+      const v = JSON.parse(readFileSync(this.path, 'utf8')) as { account?: unknown };
+      return typeof v.account === 'string' && v.account ? v.account : undefined;
     } catch {
       return undefined;
     }
   }
-  write(calendarId: string): void {
-    writePrivateFile(this.path, JSON.stringify({ calendarId }));
+  write(account: string): void {
+    writePrivateFile(this.path, JSON.stringify({ account }));
   }
 }
 

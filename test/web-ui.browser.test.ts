@@ -9,6 +9,7 @@ import { scheme } from '../scripts/palette.js';
 import { SettingsStore } from '../src/settings/store.js';
 import { startHarness, PASS, type Harness } from './support/web.js';
 import { FEED, ics, previewWorld } from './support/preview-world.js';
+import { FakeCalendars, fakeFlow } from './support/fake-calendars.js';
 import { opts, PASS as PORTAL_PASS, USER, world as portalWorld } from './support/portal-world.js';
 
 // Real browser tests (Chromium via Playwright): responsive layout, accessibility (axe-core), keyboard,
@@ -634,6 +635,102 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       expect(w.problems).toEqual([]);
     } finally {
       await h4.close();
+    }
+  });
+
+  it('Google: save the client, connect through the (fake) sign-in, create or pick the calendar', async () => {
+    const flow = fakeFlow();
+    const calendars = new FakeCalendars();
+    calendars.add({ id: 'me@example.invalid', summary: 'me@example.invalid', primary: true });
+    calendars.add({ id: 'work', summary: XSS_TITLE });
+    calendars.add({ id: 'ro', summary: 'Read only', accessRole: 'reader' });
+    const h5 = await startHarness({
+      env: { TZ: 'Europe/Rome' },
+      app: { google: { flowClient: flow.client, calendars } },
+    });
+    try {
+      const { page, w } = await newPage({ width: 390, height: 844 });
+      const b5 = `http://localhost:${h5.port}`;
+      await page.goto(`${b5}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+      await page.goto(`${b5}/#/settings`);
+      await waitPage(page, 'Google client missing');
+      expect(await page.getByRole('button', { name: 'Connect Google' }).isDisabled()).toBe(true);
+
+      // Save the client (id + secret), then the connect button works.
+      await page.getByLabel('Google client id').fill('fake-client-id');
+      await page.getByRole('button', { name: 'Set', exact: true }).click();
+      await page.getByLabel('New google client secret').fill('fake-client-secret-not-real'); // secret-scan:ignore
+      await page.getByRole('button', { name: 'Save' }).nth(1).click();
+      await page.locator('.snackbar').getByText('Saved').waitFor();
+      await waitPage(page, 'Not connected');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+
+      await page.getByRole('button', { name: 'Connect Google' }).click();
+
+      await waitPage(page, 'Waiting for you to sign in with Google');
+      const link = page.getByRole('link', { name: 'Open the Google sign-in' });
+      expect(await link.getAttribute('href')).toContain('https://accounts.example.invalid/auth');
+      expect(await link.getAttribute('rel')).toBe('noopener noreferrer');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+
+      // The "browser" comes back from Google; the page notices by itself.
+      await fetch(`${flow.seen.redirect}?state=${flow.seen.state}&code=the-code`);
+      await waitPage(page, 'Connected');
+      await waitPage(page, 'me@example.invalid');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+
+      // Pick an existing calendar: the hostile name is text, the main and read-only calendars are not offered.
+      await page.getByRole('button', { name: 'Pick one of my calendars' }).click();
+      await page.getByRole('radio', { name: XSS_TITLE }).waitFor();
+      expect(await page.locator('main img').count()).toBe(0);
+      expect(await page.locator('input[name=cal]').count()).toBe(1);
+      expect(
+        await page.evaluate(() => (window as unknown as { __xss?: number }).__xss),
+      ).toBeUndefined();
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'light' });
+      await page.getByRole('radio', { name: XSS_TITLE }).check();
+      await page.getByRole('button', { name: 'Use the selected calendar' }).click();
+      await page.locator('.snackbar').getByText('Calendar chosen').waitFor();
+      expect(await page.locator('main dd', { hasText: XSS_TITLE }).count()).toBe(1);
+
+      // Or create the dedicated one.
+      await page.getByRole('button', { name: 'Create the dedicated calendar' }).click();
+      await page.locator('.snackbar').getByText('Calendar ready').waitFor();
+      await page.locator('main dd', { hasText: 'Polito (polito-cal-sync)' }).waitFor();
+
+      // Overview shows the three Google steps as done.
+      await page.goto(`${b5}/#/overview`);
+      await waitPage(page, 'Dedicated calendar chosen');
+      expect(
+        await page
+          .locator('.list-item', { hasText: 'Google account connected' })
+          .getByText('Done')
+          .count(),
+      ).toBe(1);
+      expect(
+        await page
+          .locator('.list-item', { hasText: 'Dedicated calendar chosen' })
+          .getByText('Done')
+          .count(),
+      ).toBe(1);
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h5.close();
     }
   });
 });

@@ -7,8 +7,6 @@ import {
   CalendarChoice,
   chooseCalendar,
   DEFAULT_CALENDAR_NAME,
-  type CalendarEntry,
-  type CalendarsApi,
 } from '../src/google/calendars.js';
 import { MemoryEventsApi, type TombstonePatch } from '../src/google/memory.js';
 import {
@@ -21,40 +19,10 @@ import { verifyGoogle } from '../src/google/verify.js';
 import { OwnedCalendar } from '../src/google/calendar.js';
 import { isUserError } from '../src/util/errors.js';
 import { CAL, draft, event } from './support/helpers.js';
+import { FakeCalendars } from './support/fake-calendars.js';
 import { toGoogleEvent } from '../src/sync/mapper.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'pcs-g-'));
-
-class FakeCalendars implements CalendarsApi {
-  readonly entries = new Map<string, CalendarEntry>();
-  deleted: string[] = [];
-  failDelete = false;
-  private n = 0;
-  add(e: Partial<CalendarEntry> & { id: string }): void {
-    this.entries.set(e.id, { summary: e.id, primary: false, accessRole: 'owner', ...e });
-  }
-  list = () => Promise.resolve([...this.entries.values()]);
-  get = (id: string) => {
-    const e = this.entries.get(id);
-    return e ? Promise.resolve(e) : Promise.reject(new Error('missing'));
-  };
-  insert = (p: { summary: string }) => {
-    const e: CalendarEntry = {
-      id: `new-${++this.n}`,
-      summary: p.summary,
-      primary: false,
-      accessRole: 'owner',
-    };
-    this.entries.set(e.id, e);
-    return Promise.resolve(e);
-  };
-  delete = (id: string) => {
-    if (this.failDelete) return Promise.reject(new Error('nope'));
-    this.deleted.push(id);
-    this.entries.delete(id);
-    return Promise.resolve();
-  };
-}
 
 describe('TokenStore', () => {
   it('writes the login with mode 0600 and reads it back', () => {

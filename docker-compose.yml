@@ -18,6 +18,8 @@ services:
     ports:
       # Local only: the wizard and status page must never be reachable from the network.
       - '127.0.0.1:8787:8787'
+      # The UI's "Connect Google" waits here for Google to send the browser back (open only during a sign-in).
+      - '127.0.0.1:8789:8789'
     volumes:
       - polito-cal-sync-data:/data
     read_only: true
