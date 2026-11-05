@@ -31,8 +31,25 @@ export class LoginLatch {
         code: 'E_POLITO_LOGIN_BLOCKED',
         what: 'The Polito login is paused: these exact credentials were refused earlier, so no new attempt is made.',
         why: 'Repeating a refused login every hour could get the account locked.',
-        action: `Fix POLITO_USERNAME / POLITO_PASSWORD in .env (the pause ends by itself when they change), after checking that they work in a browser. Refused at ${typeof stored.at === 'string' ? stored.at : 'an earlier run'}.`,
+        action: `Check in a browser that the login works, then fix the username or password (Sources page, or POLITO_USERNAME / POLITO_PASSWORD in .env): the pause ends by itself when they change. If the credentials were right and the refusal was a one-off, press "I fixed the credentials" on the History page. Refused at ${typeof stored.at === 'string' ? stored.at : 'an earlier run'}.`,
       });
+    }
+  }
+
+  /** When these exact credentials were refused, or undefined if they are not paused (also after they changed). */
+  pausedSince(username: string, password: string): string | undefined {
+    try {
+      const v = JSON.parse(readFileSync(this.file, 'utf8')) as {
+        fingerprint?: unknown;
+        at?: unknown;
+      };
+      return v.fingerprint === LoginLatch.fingerprint(username, password)
+        ? typeof v.at === 'string'
+          ? v.at
+          : ''
+        : undefined;
+    } catch {
+      return undefined;
     }
   }
 

@@ -59,6 +59,24 @@ interface RawRun {
   details: string | null;
 }
 
+function toRunRow(r: RawRun): RunRow {
+  return {
+    id: r.id,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+    status: r.status,
+    forced: r.forced === 1,
+    calendarId: r.calendar_id,
+    created: r.created,
+    patched: r.patched,
+    deleted: r.deleted,
+    unchanged: r.unchanged,
+    failed: r.failed,
+    errorCode: r.error_code,
+    details: r.details === null ? null : (JSON.parse(r.details) as unknown),
+  };
+}
+
 /**
  * Sync history and a local mirror of what we last wrote. The calendar itself (events with our
  * marker and hash) is the source of truth for diffing, so losing this file loses history only.
@@ -105,6 +123,43 @@ export class StateStore {
           'Make sure only one instance runs. If the file is corrupt, move state.db out of the data folder: the next run rebuilds from the calendar, nothing is lost.',
         cause,
       });
+    }
+  }
+
+  /**
+   * The last runs, newest first, for the History page. Read-only: unlike `open` it never changes anything
+   * (in particular it does not mark a run in progress as interrupted). No file yet = no runs.
+   */
+  static recent(path: string, limit: number): RunRow[] {
+    if (!existsSync(path)) return [];
+    let db: Database.Database | undefined;
+    try {
+      db = new Database(path, { readonly: true, fileMustExist: true });
+      db.pragma('busy_timeout = 3000');
+      if ((db.pragma('user_version', { simple: true }) as number) > SCHEMA_VERSION) {
+        throw new UserError({
+          code: 'E_STATE_DB_SCHEMA_NEWER',
+          what: 'The state database was written by a newer version of this program.',
+          why: 'An older version was started on a data folder used by a newer one.',
+          action: 'Upgrade to the newer version, or use a separate data folder.',
+        });
+      }
+      const rows = db
+        .prepare('SELECT * FROM runs ORDER BY id DESC LIMIT ?')
+        .all(Math.max(1, Math.min(limit, 200))) as RawRun[];
+      return rows.map(toRunRow);
+    } catch (cause) {
+      if (cause instanceof UserError) throw cause;
+      throw new UserError({
+        code: 'E_STATE_DB_OPEN_FAILED',
+        what: 'The sync history database could not be opened.',
+        why: 'The file is corrupt, locked by another running instance, or the disk is full.',
+        action:
+          'Make sure only one instance runs. If the file is corrupt, move state.db out of the data folder: the next run rebuilds from the calendar, nothing is lost.',
+        cause,
+      });
+    } finally {
+      db?.close();
     }
   }
 
@@ -245,22 +300,7 @@ export class StateStore {
   lastRun(): RunRow | undefined {
     const r = this.db.prepare('SELECT * FROM runs ORDER BY id DESC LIMIT 1').get() as
       RawRun | undefined;
-    if (!r) return undefined;
-    return {
-      id: r.id,
-      startedAt: r.started_at,
-      finishedAt: r.finished_at,
-      status: r.status,
-      forced: r.forced === 1,
-      calendarId: r.calendar_id,
-      created: r.created,
-      patched: r.patched,
-      deleted: r.deleted,
-      unchanged: r.unchanged,
-      failed: r.failed,
-      errorCode: r.error_code,
-      details: r.details === null ? null : (JSON.parse(r.details) as unknown),
-    };
+    return r ? toRunRow(r) : undefined;
   }
 
   close(): void {

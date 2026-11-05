@@ -70,6 +70,8 @@ const ICONS = {
     ],
   ],
   add: [['path', { d: 'M12 5v14M5 12h14' }]],
+  courses: [['path', { d: 'M4 5h12a3 3 0 0 1 3 3v11H7a3 3 0 0 1-3-3zM8 9h7M8 13h5' }]],
+  history: [['path', { d: 'M4 12a8 8 0 1 0 2.5-5.8M4 4v5h5M12 8v5l3 2' }]],
   refresh: [['path', { d: 'M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5' }]],
 };
 

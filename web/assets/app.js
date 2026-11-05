@@ -1,6 +1,8 @@
 import { api, setCsrf } from './api.js';
 import { clear, errorBanner, h, icon, loading, toast } from './dom.js';
 import { renderLogin, renderSetup } from './pages/auth.js';
+import { renderCourses } from './pages/courses.js';
+import { renderHistory } from './pages/history.js';
 import { renderOverview } from './pages/overview.js';
 import { renderPreview } from './pages/preview.js';
 import { renderSettings } from './pages/settings.js';
@@ -15,10 +17,13 @@ const ROUTES = [
   { path: 'overview', label: 'Overview', icon: 'home', render: () => renderOverview() },
   { path: 'preview', label: 'Preview', icon: 'preview', render: () => renderPreview() },
   { path: 'sources', label: 'Sources', icon: 'sources', render: () => renderSources(show) },
+  { path: 'courses', label: 'Courses', icon: 'courses', render: () => renderCourses() },
+  { path: 'history', label: 'History', icon: 'history', render: () => renderHistory(show) },
   {
     path: 'settings',
     label: 'Settings',
     icon: 'settings',
+    topBar: true, // five destinations in the navigation bar; Settings is the gear in the top bar
     render: () => renderSettings(show, start),
   },
 ];
@@ -29,7 +34,16 @@ let token = 0;
 function buildNav() {
   clear(nav);
   nav.append(h('div', { class: 'brand-title', text: 'polito-cal-sync' }));
-  for (const r of ROUTES) {
+  const bar = document.getElementById('bar-actions');
+  clear(bar);
+  bar.append(
+    h(
+      'a',
+      { class: 'icon-btn', id: 'settings-link', href: '#/settings', 'aria-label': 'Settings' },
+      icon('settings'),
+    ),
+  );
+  for (const r of ROUTES.filter((x) => !x.topBar)) {
     nav.append(
       h(
         'a',
@@ -45,6 +59,11 @@ function mark() {
   for (const a of nav.querySelectorAll('.nav-item')) {
     if (a.dataset.route === current.path) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
+  }
+  const gear = document.getElementById('settings-link');
+  if (gear) {
+    if (current.path === 'settings') gear.setAttribute('aria-current', 'page');
+    else gear.removeAttribute('aria-current');
   }
 }
 

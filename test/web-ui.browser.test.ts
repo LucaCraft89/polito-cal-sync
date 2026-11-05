@@ -10,6 +10,8 @@ import { SettingsStore } from '../src/settings/store.js';
 import { startHarness, PASS, type Harness } from './support/web.js';
 import { FEED, ics, previewWorld } from './support/preview-world.js';
 import { FakeCalendars, fakeFlow } from './support/fake-calendars.js';
+import { LoginLatch } from '../src/sources/polito/portal/latch.js';
+import { StateStore } from '../src/sync/state.js';
 import { opts, PASS as PORTAL_PASS, USER, world as portalWorld } from './support/portal-world.js';
 
 // Real browser tests (Chromium via Playwright): responsive layout, accessibility (axe-core), keyboard,
@@ -30,7 +32,7 @@ const VIEWPORTS = [
   { name: '768x1024', width: 768, height: 1024 },
   { name: '1280x800', width: 1280, height: 800 },
 ] as const;
-const ROUTES = ['overview', 'preview', 'sources', 'settings'] as const;
+const ROUTES = ['overview', 'preview', 'sources', 'courses', 'history', 'settings'] as const;
 const XSS_TITLE = '<img src=x onerror="window.__xss=1">';
 
 interface Watch {
@@ -254,11 +256,15 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await waitPage(page, 'Last sync');
       for (const route of ROUTES) {
         await page.goto(`${base}/#/${route}`);
-        await page.locator('.nav-item[aria-current="page"]').waitFor();
+        const current = route === 'settings' ? '#settings-link' : '.nav-item';
+        await page.locator(`${current}[aria-current="page"]`).waitFor();
         await page.waitForLoadState('networkidle');
         await settle(page);
-        const label = await page.locator('.nav-item[aria-current="page"]').textContent();
-        expect(label?.toLowerCase(), route).toContain(route);
+        const label = await page
+          .locator(`${current}[aria-current="page"]`)
+          .getAttribute('aria-label');
+        const text = label ?? (await page.locator(`${current}[aria-current="page"]`).textContent());
+        expect(text?.toLowerCase(), route).toContain(route);
         expect(await layoutProblems(page, vp.width), `${route} layout`).toEqual([]);
         expect(await axeProblems(page), `${route} axe (light)`).toEqual([]);
         if (vp.width === 1280 || vp.width === 360) {
@@ -886,6 +892,90 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       expect(w.problems).toEqual([]);
     } finally {
       await h7.close();
+    }
+  });
+
+  it('Courses and History pages with data, and "I fixed the credentials"', async () => {
+    const w8 = previewWorld();
+    const portal = portalWorld({
+      data: JSON.parse(
+        readFileSync(
+          new URL('./fixtures/polito-portal/student-data.json', import.meta.url),
+          'utf8',
+        ),
+      ) as unknown,
+    });
+    w8.deps.politoPortal = opts(portal.fetchImpl);
+    const h8 = await startHarness({ env: { TZ: 'Europe/Rome' }, app: { runDeps: w8.deps } });
+    try {
+      new SettingsStore(h8.dataDir).apply(
+        {
+          set: { 'polito.enabled': true, 'polito.username': USER, 'polito.password': PORTAL_PASS },
+        }, // secret-scan:ignore
+        {},
+      );
+      const db = StateStore.open(StateStore.fileIn(h8.dataDir));
+      const id = db.startRun({
+        calendarId: 'c',
+        forced: false,
+        now: new Date('2026-11-05T10:00:00Z'),
+      });
+      db.finishRun(
+        id,
+        {
+          status: 'refused',
+          created: 0,
+          patched: 0,
+          deleted: 4,
+          unchanged: 1,
+          failed: 0,
+          errorCode: 'E_DELETE_THRESHOLD',
+        },
+        new Date('2026-11-05T10:00:03Z'),
+      );
+      db.close();
+      new LoginLatch(h8.dataDir).block(USER, PORTAL_PASS, new Date('2026-11-05T09:00:00Z'));
+      const { page, w } = await newPage({ width: 360, height: 800 });
+      const b8 = `http://localhost:${h8.port}`;
+      await page.goto(`${b8}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+
+      await page.goto(`${b8}/#/history`);
+      await waitPage(page, 'The university login is paused');
+      await waitPage(page, 'Refused');
+      await waitPage(page, 'What to do');
+      await settle(page);
+      expect(await layoutProblems(page, 360)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'light' });
+      await page.getByRole('button', { name: 'I fixed the credentials' }).click();
+      await page.locator('dialog').getByRole('button', { name: 'Allow one more try' }).click();
+      await page
+        .getByText('No sync has written anything yet')
+        .or(page.getByText('Refused'))
+        .first()
+        .waitFor();
+      expect(await page.getByText('The university login is paused').count()).toBe(0);
+      expect(portal.log.length).toBe(0); // ending the pause makes no request by itself
+
+      await page.goto(`${b8}/#/courses`);
+      await waitPage(page, 'No courses yet');
+      await page.goto(`${b8}/#/preview`);
+      await page.getByRole('button', { name: 'Preview now' }).click();
+      await waitPage(page, 'Write this to your calendar').catch(() => undefined);
+      await page.goto(`${b8}/#/courses`);
+      await waitPage(page, 'Invented Analysis');
+      await settle(page);
+      expect(await layoutProblems(page, 360)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h8.close();
     }
   });
 });

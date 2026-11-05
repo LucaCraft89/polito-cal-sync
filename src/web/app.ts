@@ -11,6 +11,7 @@ import { UserError } from '../util/errors.js';
 import { PassphraseStore, LoginThrottle, SessionStore, type Session } from './auth.js';
 import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http.js';
 import { SourceChecks } from './checks.js';
+import { coursesView, historyView, resumeLogin } from './history.js';
 import { GoogleService, type GoogleDeps } from './google.js';
 import { PreviewService } from './preview.js';
 import { SyncService } from './sync.js';
@@ -385,6 +386,46 @@ export function createWebApp(o: WebAppOptions): WebApp {
       auth: true,
       json: true,
       run: async () => ({ status: 200, body: await preview.run() }),
+    },
+    {
+      method: 'GET',
+      path: '/api/courses',
+      auth: true,
+      json: false,
+      run: () => ({ status: 200, body: coursesView(o.dataDir, o.env, settings) }),
+    },
+    {
+      method: 'GET',
+      path: '/api/history',
+      auth: true,
+      json: false,
+      run: (c) => {
+        const n = Number(c.query.get('limit') ?? 30);
+        return {
+          status: 200,
+          body: historyView(
+            o.dataDir,
+            o.env,
+            settings,
+            Number.isInteger(n) && n > 0 ? Math.min(n, 100) : 30,
+          ),
+        };
+      },
+    },
+    {
+      method: 'POST',
+      path: '/api/sources/polito/resume',
+      auth: true,
+      json: true,
+      run: (c) => {
+        parseBody(z.object({}).strict(), c.body);
+        const resumed = resumeLogin(o.dataDir, o.env, settings);
+        if (resumed) {
+          audit.append('polito.login.resumed');
+          log.info('ui ended the polito login pause');
+        }
+        return { status: 200, body: { resumed } };
+      },
     },
     {
       method: 'GET',

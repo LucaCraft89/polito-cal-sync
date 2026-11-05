@@ -3,6 +3,7 @@ import { ensureDataDir, type Config } from '../config/index.js';
 import { OwnedCalendar } from '../google/calendar.js';
 import { connectGoogle, type GoogleRuntime } from '../google/runtime.js';
 import { IcsSource, type FeedReport } from '../sources/ics/index.js';
+import { CourseCatalog } from '../sources/polito/catalog.js';
 import { PolitoPortalSource } from '../sources/polito/index.js';
 import type { PortalOptions } from '../sources/polito/portal/login.js';
 import type { Source, SourceResult } from '../sources/types.js';
@@ -151,6 +152,18 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
         );
         results.push({ source: source.id, complete: false, events: [] });
         sourceErrors.push({ source: source.id, error });
+      }
+    }
+    if (polito && polito.courseNames.size > 0) {
+      // Remember the course list for the Courses page and the squad picker (names and squad labels only).
+      try {
+        new CourseCatalog(config.dataDir).write(
+          polito.courseNames,
+          polito.squadsSeen,
+          (deps.now ?? (() => new Date()))(),
+        );
+      } catch (err) {
+        logger.warn({ err }, 'could not save the course list');
       }
     }
     for (const r of polito?.lastReport ?? []) {

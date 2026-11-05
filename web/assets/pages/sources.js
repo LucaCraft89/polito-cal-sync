@@ -115,7 +115,11 @@ export async function renderSources(rerender) {
   try {
     ({ settings } = await api('GET', '/api/settings'));
     // The squads on offer come from the last preview (they are only known from the portal's lessons).
-    lastPreview = (await api('GET', '/api/preview').catch(() => ({}))).preview ?? null;
+    lastPreview = {
+      squads: (await api('GET', '/api/courses').catch(() => ({ courses: [] }))).courses.filter(
+        (c) => c.labels.length > 0,
+      ),
+    };
   } catch (err) {
     body.replaceChildren(errorBanner(err));
     return page;

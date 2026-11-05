@@ -657,3 +657,21 @@ dialog.dialog h2 {
   accent-color: var(--c-primary);
   flex: none;
 }
+
+/* Icon button in the top bar (Settings): a 48 px target with a visible focus ring. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--shape-full, 999px);
+  color: var(--c-on-surface-variant);
+  text-decoration: none;
+}
+.icon-btn:hover {
+  background: color-mix(in srgb, var(--c-on-surface) 8%, transparent);
+}
+.icon-btn[aria-current='page'] {
+  background: var(--c-secondary-container);
+  color: var(--c-on-secondary-container);
+}

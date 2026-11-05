@@ -29,6 +29,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 # The web UI files (dist/web/static.js looks for them at ../../web, i.e. /app/web)
 COPY web ./web
+# The generic texts of every error code (the History page shows them for runs that only saved the code)
+COPY docs/ERRORS.md ./docs/ERRORS.md
 COPY package.json ./
 # /data is the only writable place: state, tokens and the sqlite db live here (mode 0600 files)
 RUN mkdir -p /data && chown node:node /data
