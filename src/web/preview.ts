@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import type { Logger } from 'pino';
+import { CalendarChoice } from '../google/calendars.js';
 import { loadConfig } from '../config/index.js';
 import type { SettingsStore } from '../settings/store.js';
 import type { CanonicalEvent } from '../sources/types.js';
@@ -74,6 +76,25 @@ export function problem(e: UserError, source?: string): ProblemView {
   };
 }
 
+/** Feed and source problems of a run, in the three-line form (no addresses, no event text). */
+export function problemsOf(out: RunOutput): ProblemView[] {
+  return [
+    ...out.feeds.flatMap((f) => (f.error ? [problem(f.error, f.label)] : [])),
+    ...out.sourceErrors.map((s) => problem(s.error, s.source)),
+  ];
+}
+
+/**
+ * Identifies what a preview was made from: every saved setting that changes what a sync does (not the
+ * interval) and the chosen calendar. Only a hash is kept. A changed stamp makes the preview stale.
+ */
+export function settingsStamp(dataDir: string, settings: SettingsStore): string {
+  const relevant = Object.entries(settings.read()).filter(([k]) => k !== 'syncIntervalMinutes');
+  return createHash('sha256')
+    .update(JSON.stringify([relevant, new CalendarChoice(dataDir).read() ?? null]))
+    .digest('hex');
+}
+
 /** Plain, JSON-safe view of a dry run. Event text is untrusted; the browser shows it as text only. */
 export function toPreview(
   out: RunOutput,
@@ -93,10 +114,7 @@ export function toPreview(
       ...(name ? { course: name } : {}),
     };
   };
-  const problems: ProblemView[] = [
-    ...out.feeds.flatMap((f) => (f.error ? [problem(f.error, f.label)] : [])),
-    ...out.sourceErrors.map((s) => problem(s.error, s.source)),
-  ];
+  const problems = problemsOf(out);
   return {
     generatedAt: at.toISOString(),
     complete: plan.incompleteSources.length === 0,
@@ -157,11 +175,25 @@ export class PreviewService {
   private running = false;
   private lastStartedAt: number | undefined;
   private last: PreviewView | undefined;
+  private lastStamp: string | undefined;
 
   constructor(private readonly o: PreviewOptions) {}
 
   get latest(): { preview: PreviewView | null; nextAllowedAt: string | null } {
     return { preview: this.last ?? null, nextAllowedAt: this.nextAllowed() };
+  }
+
+  /** The last preview with the stamp of the settings it was made from (for Sync now). */
+  get current(): { view: PreviewView; stamp: string } | undefined {
+    return this.last && this.lastStamp !== undefined
+      ? { view: this.last, stamp: this.lastStamp }
+      : undefined;
+  }
+
+  /** After a real sync the preview no longer describes the calendar: a new one is needed. */
+  invalidate(): void {
+    this.last = undefined;
+    this.lastStamp = undefined;
   }
 
   private nextAllowed(): string | null {
@@ -191,6 +223,8 @@ export class PreviewService {
     }
     this.running = true;
     this.lastStartedAt = this.o.now();
+    // Taken BEFORE the run: a setting saved while it runs makes this preview stale, never fresh.
+    const stamp = settingsStamp(this.o.dataDir, this.o.settings);
     try {
       const config = loadConfig(
         { ...this.o.env, DATA_DIR: this.o.dataDir },
@@ -201,6 +235,7 @@ export class PreviewService {
         { dryRun: true, force: false },
       );
       this.last = toPreview(out, new Date(this.o.now()), config.polito.squads);
+      this.lastStamp = stamp;
       this.o.logger.info(
         {
           creates: this.last.counts.creates,

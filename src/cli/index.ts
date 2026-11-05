@@ -312,11 +312,12 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   });
 
   let statusServer: ReturnType<typeof createStatusServer> | undefined;
+  let web: ReturnType<typeof createWebApp> | undefined;
   if (config.ui.enabled && config.status.port === 0) {
     logger.warn('UI_ENABLED is true but STATUS_PORT is 0, so the web UI API is not started');
   }
   if (config.status.port !== 0) {
-    const web = config.ui.enabled
+    web = config.ui.enabled
       ? createWebApp({
           dataDir: config.dataDir,
           env,
@@ -346,6 +347,11 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   const onStop = () => {
     logger.info('stop requested, finishing the current run');
     void loop.stop(deps.shutdownGraceMs).then(async () => {
+      // A sync started from the web page finishes too (within the same grace time).
+      await Promise.race([
+        web?.settle(),
+        new Promise((r) => setTimeout(r, deps.shutdownGraceMs ?? 25_000).unref()),
+      ]);
       await statusServer?.close();
     });
   };

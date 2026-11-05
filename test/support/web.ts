@@ -22,6 +22,7 @@ export interface Harness {
   clock: { t: number };
   sessions: SessionStore;
   throttle: LoginThrottle;
+  web: ReturnType<typeof createWebApp>;
   /** One raw request. Defaults: Host localhost:<port>, same-origin Origin for non-GET. */
   call(
     method: string,
@@ -110,6 +111,7 @@ export async function startHarness(
     clock,
     sessions,
     throttle,
+    web,
     call,
     async setup(p = PASS) {
       const r = await call('POST', '/api/setup', { body: { passphrase: p } });

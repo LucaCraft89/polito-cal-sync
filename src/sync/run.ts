@@ -7,7 +7,7 @@ import { PolitoPortalSource } from '../sources/polito/index.js';
 import type { PortalOptions } from '../sources/polito/portal/login.js';
 import type { Source, SourceResult } from '../sources/types.js';
 import { toUserError, UserError } from '../util/errors.js';
-import { runSync, type SyncReport } from './engine.js';
+import { runSync, type SyncOptions, type SyncReport } from './engine.js';
 import { acquireRunLock } from './lock.js';
 import { StateStore } from './state.js';
 
@@ -122,10 +122,7 @@ function buildIcs(ctx: RunContext): IcsSource {
  * The real path used by `sync` and `serve`: ICS feeds -> engine -> the dedicated Google calendar.
  * A real run holds the data-folder lock, so two syncs never overlap. A dry run reads only.
  */
-export async function runConfiguredSync(
-  ctx: RunContext,
-  options: { dryRun: boolean; force: boolean },
-): Promise<RunOutput> {
+export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): Promise<RunOutput> {
   const { config, logger, deps = {} } = ctx;
   const { sources, ics, polito } = buildSources(ctx);
   ensureDataDir(config.dataDir);

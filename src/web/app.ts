@@ -13,6 +13,7 @@ import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http
 import { SourceChecks } from './checks.js';
 import { GoogleService, type GoogleDeps } from './google.js';
 import { PreviewService } from './preview.js';
+import { SyncService } from './sync.js';
 import { StaticFiles } from './static.js';
 
 export const SESSION_COOKIE = 'pcs_session';
@@ -33,6 +34,8 @@ export interface WebAppOptions {
   /** Replaces Google, the portal and the clock in the preview (tests only). */
   runDeps?: RuntimeDeps;
   previewMinIntervalMs?: number;
+  /** Not more often than this between two syncs started from the page (tests shorten it). */
+  syncMinIntervalMs?: number;
   /** Replaces the Google sign-in and calendar list (tests only). */
   google?: GoogleDeps;
   /** How long the Google sign-in waits for the browser (tests shorten it). */
@@ -44,6 +47,8 @@ export interface WebAppOptions {
 }
 
 export interface WebApp {
+  /** Resolves when a sync started from the page has finished (shutdown waits for it). */
+  settle(): Promise<void>;
   /** Answers `/api/*` and the UI files and returns true; returns false for any other path (not ours). */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
 }
@@ -91,6 +96,13 @@ const calendarBody = z.union([
     })
     .strict(),
 ]);
+const syncBody = z
+  .object({
+    previewAt: z.string().min(1).max(64),
+    confirm: z.literal(true),
+    typed: z.string().max(100).optional(),
+  })
+  .strict();
 const feedTestBody = z.object({ index: z.number().int().min(0).max(1000) }).strict();
 const settingsBody = z
   .object({
@@ -158,6 +170,17 @@ export function createWebApp(o: WebAppOptions): WebApp {
     ...(o.previewMinIntervalMs !== undefined ? { minIntervalMs: o.previewMinIntervalMs } : {}),
   });
 
+  const syncNow = new SyncService({
+    dataDir: o.dataDir,
+    env: o.env,
+    settings,
+    audit,
+    preview,
+    logger: o.logger,
+    now,
+    ...(o.runDeps ? { deps: o.runDeps } : {}),
+    ...(o.syncMinIntervalMs !== undefined ? { minIntervalMs: o.syncMinIntervalMs } : {}),
+  });
   const checks = new SourceChecks({
     dataDir: o.dataDir,
     env: o.env,
@@ -364,6 +387,20 @@ export function createWebApp(o: WebAppOptions): WebApp {
       run: async () => ({ status: 200, body: await preview.run() }),
     },
     {
+      method: 'GET',
+      path: '/api/sync',
+      auth: true,
+      json: false,
+      run: () => ({ status: 200, body: syncNow.status }),
+    },
+    {
+      method: 'POST',
+      path: '/api/sync',
+      auth: true,
+      json: true,
+      run: (c) => ({ status: 202, body: syncNow.start(parseBody(syncBody, c.body)) }),
+    },
+    {
       method: 'POST',
       path: '/api/sources/feeds/test',
       auth: true,
@@ -549,6 +586,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
   }
 
   return {
+    settle: () => syncNow.settle(),
     async handle(req, res) {
       const url = new URL(req.url ?? '/', 'http://placeholder.invalid');
       if (!url.pathname.startsWith('/api/')) {

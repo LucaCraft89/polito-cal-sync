@@ -20,6 +20,12 @@ export interface SyncDeps {
 export interface SyncOptions {
   dryRun: boolean;
   force: boolean;
+  /**
+   * Looks at the computed plan before anything is written and may veto it (a UserError); the run is then
+   * recorded as refused and nothing changes. The UI uses it to hold a confirmed run to the plan it showed.
+   * Ignored by dry runs.
+   */
+  guard?: (plan: Plan) => UserError | undefined;
 }
 
 export type SyncStatus = 'dry-run' | 'ok' | 'partial' | 'refused' | 'failed';
@@ -96,6 +102,7 @@ export async function runSync(
   );
 
   const refused = plan.safety.exceeded && !options.force;
+  const vetoed = options.dryRun ? undefined : options.guard?.(plan);
   if (options.dryRun) {
     return {
       status: 'dry-run',
@@ -105,8 +112,8 @@ export async function runSync(
     };
   }
 
-  if (refused) {
-    const error = thresholdError(plan);
+  if (refused || vetoed) {
+    const error = vetoed ?? thresholdError(plan);
     finish({
       status: 'refused',
       created: 0,

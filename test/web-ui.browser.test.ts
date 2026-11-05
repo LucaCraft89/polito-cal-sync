@@ -808,4 +808,84 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await h6.close();
     }
   });
+
+  it('Sync now: confirm in a dialog; beyond the limit a typed phrase is needed (fake calendar only)', async () => {
+    const clock = { t: 1_800_000_000_000 };
+    let feedText = ics(
+      ['s1', '20261110T090000Z', XSS_TITLE],
+      ['s2', '20261111T090000Z', 'Chimica'],
+      ['s3', '20261112T090000Z', 'Fisica'],
+    );
+    const w7 = previewWorld(() => feedText);
+    const h7 = await startHarness({
+      env: { TZ: 'Europe/Rome' },
+      app: { runDeps: w7.deps, previewMinIntervalMs: 0, now: () => clock.t },
+    });
+    try {
+      new SettingsStore(h7.dataDir).apply({ set: { icsUrls: [FEED] } }, {});
+      const { page, w } = await newPage({ width: 390, height: 844 });
+      const b7 = `http://localhost:${h7.port}`;
+      await page.goto(`${b7}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+      await page.goto(`${b7}/#/preview`);
+      await page.getByRole('button', { name: 'Preview now' }).click();
+      await waitPage(page, 'Write this to your calendar');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      expect(w7.api.writes).toHaveLength(0);
+
+      // Cancel in the dialog writes nothing.
+      await page.getByRole('button', { name: 'Sync now' }).click();
+      const dlg = page.locator('dialog');
+      await dlg.getByText('Write these changes to your calendar?').waitFor();
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await dlg.getByRole('button', { name: 'Cancel' }).click();
+      expect(w7.api.writes).toHaveLength(0);
+
+      // One tap to confirm.
+      await page.getByRole('button', { name: 'Sync now' }).click();
+      await dlg.getByRole('button', { name: 'Sync now' }).click();
+      await waitPage(page, 'The sync is done');
+      await waitPage(page, '3 events added, 0 changed, 0 removed');
+      expect(w7.api.writes.filter((c) => c.op === 'insert')).toHaveLength(3);
+      expect(await page.locator('main img').count()).toBe(0);
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+
+      // Everything vanishes at the source: removing 3 of 3 needs the typed phrase.
+      clock.t += 16 * 60_000;
+      feedText = ics();
+      await page.getByRole('button', { name: 'Preview now' }).click();
+      await waitPage(page, 'Would be refused');
+      await page.getByRole('button', { name: 'Sync now' }).click();
+      await dlg.getByText('Remove this many events?').waitFor();
+      const confirmBtn = dlg.getByRole('button', { name: 'Remove and sync' });
+      expect(await confirmBtn.isDisabled()).toBe(true);
+      await dlg.getByLabel('Type "remove 3" to confirm').fill('remove 2');
+      expect(await confirmBtn.isDisabled()).toBe(true);
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'light' });
+      await dlg.getByLabel('Type "remove 3" to confirm').fill('remove 3');
+      expect(await confirmBtn.isDisabled()).toBe(false);
+      await confirmBtn.click();
+      await waitPage(page, '0 events added, 0 changed, 3 removed');
+      expect(w7.api.writes.filter((c) => c.op === 'delete')).toHaveLength(3);
+
+      // A new preview now shows an empty plan: nothing left to write.
+      await page.getByRole('button', { name: 'Preview now' }).click();
+      await waitPage(page, 'Nothing to change');
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h7.close();
+    }
+  });
 });

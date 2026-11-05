@@ -172,6 +172,12 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **Why:** the scheduled `serve` loop is syncing right now, or a manual `sync` is. Two at once could fight over the same calendar. A crashed run can leave its lock behind for up to 20 minutes.
 **What to do:** wait a minute and try again. If it still says so 20 minutes after a crash, it clears itself.
 
+## E_SYNC_PLAN_CHANGED
+
+**What happened:** a sync started from the web page was stopped before it wrote anything, because it would have removed more events than the preview you confirmed showed.
+**Why:** a source changed between the preview and the sync (a feed lost events, the portal answered differently). Your confirmation covers the removals you saw, not more.
+**What to do:** nothing was changed. Run a new preview, read it, and confirm again. If a source keeps shrinking, check it on the Sources page (Test).
+
 ## E_POLITO_API_AUTH_REJECTED
 
 **What happened:** the Polito server refused our login or our token (HTTP 401 or 403).
@@ -279,6 +285,24 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **What happened:** a preview was requested less than 15 minutes after the last one, so no new one was started.
 **Why:** a preview logs in to the university portal and reads your calendar; limiting how often protects your account and your Google quota. The limit counts from the start of the last attempt, also when it failed.
 **What to do:** try again after the time the message gives. The last result stays visible on the Preview page.
+
+## E_UI_SYNC_NEEDS_PREVIEW
+
+**What happened:** "Sync now" was refused because there is no fresh preview that you looked at.
+**Why:** a sync writes to your calendar, so it only runs on a preview that is less than 30 minutes old, was made with the current settings, and is the one shown on screen. A finished sync also makes the last preview outdated.
+**What to do:** open Preview, press "Preview now", read the result, then press "Sync now". Nothing was changed.
+
+## E_UI_SYNC_CONFIRMATION
+
+**What happened:** the preview shows more removals than your deletion limit allows, and the typed confirmation was missing or wrong. Nothing was changed.
+**Why:** removing most of a calendar usually means a source came back empty or partial, so it is only done after you type `remove N` (N = the number of events that would go).
+**What to do:** if the removal is really what you want, type the phrase exactly as shown. Otherwise cancel and check your sources.
+
+## E_UI_SYNC_RATE_LIMITED
+
+**What happened:** a sync from the web page was started less than 15 minutes ago, so no new one was started.
+**Why:** a sync logs in to the university and writes to Google; limiting how often protects your account and your Google quota. The limit counts from the start of the last attempt, also when it failed. A refused request changes nothing.
+**What to do:** try again after the time the message gives. The scheduled sync keeps running on its own.
 
 ## E_UI_TEST_BUSY
 
