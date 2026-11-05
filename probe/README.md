@@ -73,6 +73,14 @@ node probe/05-idp-login.mjs --shift-days 30
 
 Does what a browser does: opens the portal login, follows the redirects to the university identity provider (`idp.polito.it`), submits your username and password **once**, forwards the SAML answer back to the portal, and makes **one** data call (`getStudentData`, your own schedule data). At most 30 requests, 1.5 s apart, only to `didattica.polito.it` and `idp.polito.it` (a redirect anywhere else stops it). If the identity provider asks for anything else (a code, a passkey), it **stops without answering** and records the form field _names_ and keywords: that is the MFA finding. It records the redirect chain, cookie _names_ and lifetimes (never values) and a sanitized copy of the data in `probe/out/sanitized/idp-student-data.json` (same redaction as step 3). Whether a server counts as a "new device" for the IdP is exactly what this finds out.
 
+### 6. Moodle mobile web service (asks for your password)
+
+```bash
+node probe/06-moodle-token.mjs
+```
+
+Does what the Moodle app does: opens `moodle.polito.it/admin/tool/mobile/launch.php`, follows the redirects to the university identity provider, submits your username and password **once**, forwards the SAML answer back, and takes the token the app would get from the final redirect. With that token (held in memory, never printed or saved) it makes a handful of **read-only** web-service calls about your own calendar, courses and assignments. At most 40 requests, 1.5 s apart, only to `moodle.polito.it` and `idp.polito.it`; any extra IdP step or a 429 stops it. It writes `probe/out/06-moodle-token.json`: the **shapes** of the answers (key names, types, counts), which functions the service allows, and the sets of event types and module names. No token, no cookie values, no titles or names. Send back only that file.
+
 ## Before you send anything back (checklist)
 
 - [ ] Open every file in `probe/out/sanitized/`. Do you recognise a real course name, teacher, room, email, matricola, link? If yes: do **not** send it; tell the assistant which field name (not the value) still leaks.
