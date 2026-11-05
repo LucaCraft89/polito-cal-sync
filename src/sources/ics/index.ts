@@ -29,6 +29,10 @@ export interface IcsSourceOptions {
   /** Events from a feed on this host are Moodle events: kind `moodle` and a visible "[Moodle] " title prefix. */
   moodleHost?: string;
   fetchOptions?: FetchOptions;
+  /** Replaces the cache in DATA_DIR (a test fetch uses NoCache). */
+  cache?: FeedCache;
+  /** Number of the first feed in messages ("feed #3"), when testing one feed of a longer list. */
+  firstFeedNumber?: number;
   now?: () => Date;
   logger?: Logger;
   /** Pause between two feeds, to stay gentle with the server. Default 1000 ms. */
@@ -89,14 +93,14 @@ export class IcsSource implements Source {
     const now = (this.o.now ?? (() => new Date()))();
     const windowStart = new Date(now.getTime() - (this.o.pastDays ?? 366) * DAY_MS);
     const windowEnd = new Date(now.getTime() + (this.o.futureDays ?? 366) * DAY_MS);
-    const cache = new FeedCache(this.o.dataDir);
+    const cache = this.o.cache ?? new FeedCache(this.o.dataDir);
     const reports: FeedReport[] = [];
     const events = new Map<string, CanonicalEvent>();
     const sleep = this.o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
     for (const [i, url] of this.o.urls.entries()) {
       if (i > 0) await sleep(this.o.pauseBetweenFeedsMs ?? 1000);
-      const label = feedLabel(i, url);
+      const label = feedLabel(i + (this.o.firstFeedNumber ?? 1) - 1, url);
       const isMoodle = this.o.moodleHost !== undefined && hostOf(url) === this.o.moodleHost;
       try {
         const feed = await fetchFeed(url, label, cache, this.o.fetchOptions);

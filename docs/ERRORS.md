@@ -280,6 +280,18 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **Why:** a preview logs in to the university portal and reads your calendar; limiting how often protects your account and your Google quota. The limit counts from the start of the last attempt, also when it failed.
 **What to do:** try again after the time the message gives. The last result stays visible on the Preview page.
 
+## E_UI_TEST_BUSY
+
+**What happened:** a feed or login test was started while another test of the same kind was still running.
+**Why:** only one test per kind runs at a time, so the other side (a calendar server or the university) is not asked twice at once.
+**What to do:** wait for the running test to finish; its result appears on the Sources page.
+
+## E_UI_TEST_RATE_LIMITED
+
+**What happened:** the same feed, or the same Polito login, was tested less than 15 minutes ago, so no new test was started. Also given when 10 feed tests were already made in the last 15 minutes.
+**Why:** every test contacts the other server (a feed test is one request, a login test is a full portal login). The limit counts from the start of the last test, also when it failed, and a refused request costs no traffic. A login the university refused is never repeated until the username or password changes (`E_POLITO_LOGIN_BLOCKED`).
+**What to do:** try again after the time the message gives. Changing the feed address, or the username or password, lifts the limit for that feed or login.
+
 ## E_UI_UNREACHABLE
 
 **What happened:** the page could not reach the program (the browser got no answer).

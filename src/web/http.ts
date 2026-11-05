@@ -29,6 +29,8 @@ const STATUS: Partial<Record<UserError['code'], number>> = {
   E_UI_NOT_FOUND: 404,
   E_UI_PREVIEW_BUSY: 409,
   E_UI_PREVIEW_RATE_LIMITED: 429,
+  E_UI_TEST_BUSY: 409,
+  E_UI_TEST_RATE_LIMITED: 429,
   E_UI_UNREACHABLE: 503,
   // Google answers. Never 401: the page reads a 401 as "your session ended".
   E_GOOGLE_CLIENT_MISSING: 409,

@@ -51,6 +51,8 @@ export const ERROR_CODES = [
   'E_UI_NOT_FOUND',
   'E_UI_PREVIEW_BUSY',
   'E_UI_PREVIEW_RATE_LIMITED',
+  'E_UI_TEST_BUSY',
+  'E_UI_TEST_RATE_LIMITED',
   'E_UI_UNREACHABLE',
 ] as const;
 

@@ -733,4 +733,79 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await h5.close();
     }
   });
+
+  it('Sources: Test a feed and Test login show counts and the three-line problems, on a phone', async () => {
+    const w6 = previewWorld();
+    const portal = portalWorld({
+      data: JSON.parse(
+        readFileSync(
+          new URL('./fixtures/polito-portal/student-data.json', import.meta.url),
+          'utf8',
+        ),
+      ) as unknown,
+    });
+    w6.deps.politoPortal = opts(portal.fetchImpl);
+    const h6 = await startHarness({ env: { TZ: 'Europe/Rome' }, app: { runDeps: w6.deps } });
+    try {
+      new SettingsStore(h6.dataDir).apply(
+        {
+          set: {
+            'polito.username': USER,
+            'polito.password': PORTAL_PASS, // secret-scan:ignore
+            icsUrls: [FEED],
+          },
+        },
+        {},
+      );
+      const { page, w } = await newPage({ width: 360, height: 800 });
+      const b6 = `http://localhost:${h6.port}`;
+      await page.goto(`${b6}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+      await page.goto(`${b6}/#/sources`);
+      await waitPage(page, 'Calendar feeds');
+      await settle(page);
+      expect(await layoutProblems(page, 360)).toEqual([]);
+
+      await page.getByRole('button', { name: /^Test feed 1/ }).click();
+      await waitPage(page, 'This feed works');
+      await waitPage(page, '1 event in the window');
+      await settle(page);
+      expect(await layoutProblems(page, 360)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      // The second test of the same feed is refused with the three-line form and no new request.
+      const before = w6.fetched.length;
+      await page.getByRole('button', { name: /^Test feed 1/ }).click();
+      await waitPage(page, 'E_UI_TEST_RATE_LIMITED');
+      expect(w6.fetched.length).toBe(before);
+
+      // Typed but unsaved credentials are not tested.
+      await page.getByRole('button', { name: 'Replace' }).click();
+      await page.getByLabel('New password').fill('typed-but-not-saved');
+      await page.getByRole('button', { name: 'Test login' }).click();
+      await waitPage(page, 'Save first');
+      expect(portal.log.length).toBe(0);
+      await page.getByLabel('New password').fill('');
+
+      await page.getByRole('button', { name: 'Test login' }).click();
+      await waitPage(page, 'The login works');
+      await waitPage(page, '2 courses');
+      await settle(page);
+      expect(await layoutProblems(page, 360)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'light' });
+      const requests = portal.log.length;
+      await page.getByRole('button', { name: 'Test login' }).click();
+      await waitPage(page, 'E_UI_TEST_RATE_LIMITED');
+      expect(portal.log.length).toBe(requests);
+      expect(w6.portalAttempts).toEqual([]); // the offline portal of the preview world was never needed
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h6.close();
+    }
+  });
 });

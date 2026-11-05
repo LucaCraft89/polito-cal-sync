@@ -1,5 +1,15 @@
 import { api } from '../api.js';
-import { button, confirmDialog, errorBanner, h, icon, loading, nextId, toast } from '../dom.js';
+import {
+  banner,
+  button,
+  confirmDialog,
+  errorBanner,
+  h,
+  icon,
+  loading,
+  nextId,
+  toast,
+} from '../dom.js';
 import { secretField, segmentedField, squadsField, switchField, textField } from '../forms.js';
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
@@ -17,6 +27,72 @@ export async function save(card, change, okText = 'Saved') {
     slot.scrollIntoView?.({ block: 'nearest' });
     return undefined;
   }
+}
+
+const SECTION_WORDS = {
+  carico: ['course', 'courses'],
+  orari: ['lesson', 'lessons'],
+  appelli: ['exam call', 'exam calls'],
+  agenda: ['agenda item', 'agenda items'],
+};
+const plural = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
+
+/** Runs one "Test" call and shows its result (counts and the three-line problem, never names or addresses). */
+async function runTest(button, slot, path, body, show) {
+  button.disabled = true;
+  slot.replaceChildren(loading('Testing…'));
+  try {
+    slot.replaceChildren(show(await api('POST', path, body)));
+  } catch (err) {
+    slot.replaceChildren(errorBanner(err));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function feedResult(r) {
+  const nodes = [];
+  if (r.ok) {
+    nodes.push(
+      banner(
+        'ok',
+        'This feed works',
+        `${plural(r.events, ['event', 'events'])} in the window of a year back and a year ahead${r.cancelled ? `, ${r.cancelled} cancelled left out` : ''}. Nothing was saved or written.`,
+      ),
+    );
+  } else if (r.problem) {
+    nodes.push(errorBanner({ detail: r.problem }));
+    if (r.events > 0)
+      nodes.push(
+        h('p', {
+          class: 'field-help',
+          text: `${plural(r.events, ['event', 'events'])} could still be read.`,
+        }),
+      );
+  }
+  return h('div', { class: 'stack-sm' }, ...nodes);
+}
+
+function loginResult(r) {
+  const nodes = [];
+  const counts = r.sections
+    .filter((x) => SECTION_WORDS[x.section])
+    .map((x) => plural(x.items, SECTION_WORDS[x.section]))
+    .join(', ');
+  if (r.ok) {
+    nodes.push(
+      banner(
+        'ok',
+        'The login works',
+        `The portal answered with ${counts}. Nothing was saved or written.`,
+      ),
+    );
+  } else if (r.problem) {
+    nodes.push(errorBanner({ detail: r.problem }));
+    if (counts)
+      nodes.push(h('p', { class: 'field-help', text: `Read before the problem: ${counts}.` }));
+  }
+  return h('div', { class: 'stack-sm' }, ...nodes);
 }
 
 export async function renderSources(rerender) {
@@ -94,8 +170,28 @@ export async function renderSources(rerender) {
     calls.el,
     squads.el,
     errSlot(),
-    h('div', { class: 'card-actions' }, button('Save', { type: 'submit' })),
+    h('div', { class: 'stack-sm', 'aria-live': 'polite', 'data-test-result': 'login' }),
+    h(
+      'div',
+      { class: 'card-actions' },
+      button('Test login', { variant: 'outlined', iconName: 'play', id: 'test-login' }),
+      button('Save', { type: 'submit' }),
+    ),
   );
+  portalCard.querySelector('#test-login').addEventListener('click', (ev) => {
+    const slot = portalCard.querySelector('[data-test-result]');
+    if (password.read() || username.read() !== username.initial) {
+      slot.replaceChildren(
+        banner(
+          'warn',
+          'Save first',
+          'The test uses the saved login, not what is typed. Press Save, then Test login.',
+        ),
+      );
+      return;
+    }
+    void runTest(ev.currentTarget, slot, '/api/sources/polito/test', {}, loginResult);
+  });
   portalCard.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const set = {};
@@ -128,7 +224,24 @@ export async function renderSources(rerender) {
           { class: 'grow' },
           h('span', { class: 't-label', text: `Feed ${f.index}` }),
           h('span', { class: 'muted t-small', text: f.host }),
+          h('div', {
+            class: 'stack-sm',
+            'aria-live': 'polite',
+            'data-test-result': `feed-${f.index}`,
+          }),
         ),
+        button('Test', {
+          variant: 'tonal',
+          'aria-label': `Test feed ${f.index} (${f.host})`,
+          onclick: (ev) =>
+            void runTest(
+              ev.currentTarget,
+              list.querySelector(`[data-test-result="feed-${f.index}"]`),
+              '/api/sources/feeds/test',
+              { index: f.index - 1 },
+              feedResult,
+            ),
+        }),
         button('Remove', {
           variant: 'text',
           disabled: feeds.locked,

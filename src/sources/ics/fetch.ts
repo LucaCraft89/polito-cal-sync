@@ -56,6 +56,19 @@ export class FeedCache {
   }
 }
 
+/** A cache that never remembers anything: for a one-off test fetch that must not touch DATA_DIR. */
+export class NoCache extends FeedCache {
+  constructor() {
+    super('');
+  }
+  override read(): undefined {
+    return undefined;
+  }
+  override write(): void {
+    /* a test fetch leaves nothing behind */
+  }
+}
+
 export interface FetchOptions {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;

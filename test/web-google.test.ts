@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- test code reads loose JSON answers */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access -- test code reads loose JSON answers */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';

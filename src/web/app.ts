@@ -10,6 +10,7 @@ import type { RuntimeDeps } from '../sync/run.js';
 import { UserError } from '../util/errors.js';
 import { PassphraseStore, LoginThrottle, SessionStore, type Session } from './auth.js';
 import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http.js';
+import { SourceChecks } from './checks.js';
 import { GoogleService, type GoogleDeps } from './google.js';
 import { PreviewService } from './preview.js';
 import { StaticFiles } from './static.js';
@@ -90,6 +91,7 @@ const calendarBody = z.union([
     })
     .strict(),
 ]);
+const feedTestBody = z.object({ index: z.number().int().min(0).max(1000) }).strict();
 const settingsBody = z
   .object({
     set: z.record(z.string(), z.unknown()).optional(),
@@ -156,6 +158,14 @@ export function createWebApp(o: WebAppOptions): WebApp {
     ...(o.previewMinIntervalMs !== undefined ? { minIntervalMs: o.previewMinIntervalMs } : {}),
   });
 
+  const checks = new SourceChecks({
+    dataDir: o.dataDir,
+    env: o.env,
+    settings,
+    logger: o.logger,
+    now,
+    ...(o.runDeps ? { deps: o.runDeps } : {}),
+  });
   const googleService = new GoogleService({
     dataDir: o.dataDir,
     env: o.env,
@@ -352,6 +362,26 @@ export function createWebApp(o: WebAppOptions): WebApp {
       auth: true,
       json: true,
       run: async () => ({ status: 200, body: await preview.run() }),
+    },
+    {
+      method: 'POST',
+      path: '/api/sources/feeds/test',
+      auth: true,
+      json: true,
+      run: async (c) => ({
+        status: 200,
+        body: await checks.testFeed(parseBody(feedTestBody, c.body).index),
+      }),
+    },
+    {
+      method: 'POST',
+      path: '/api/sources/polito/test',
+      auth: true,
+      json: true,
+      run: async (c) => {
+        parseBody(z.object({}).strict(), c.body);
+        return { status: 200, body: await checks.testLogin() };
+      },
     },
     {
       method: 'GET',
