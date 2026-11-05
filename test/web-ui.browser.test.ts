@@ -955,11 +955,7 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await page.emulateMedia({ colorScheme: 'light' });
       await page.getByRole('button', { name: 'I fixed the credentials' }).click();
       await page.locator('dialog').getByRole('button', { name: 'Allow one more try' }).click();
-      await page
-        .getByText('No sync has written anything yet')
-        .or(page.getByText('Refused'))
-        .first()
-        .waitFor();
+      await page.getByText('The university login is paused').waitFor({ state: 'detached' });
       expect(await page.getByText('The university login is paused').count()).toBe(0);
       expect(portal.log.length).toBe(0); // ending the pause makes no request by itself
 

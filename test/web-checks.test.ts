@@ -201,6 +201,8 @@ describe('Test login for the Polito portal', () => {
       readFileSync(join(h!.dataDir, 'audit.log'), 'utf8'),
     ].join('\n');
     for (const leak of ['Invented', 'Room 9', PASS]) expect(everything).not.toContain(leak);
+    const courses = await h!.call('GET', '/api/courses', { cookie: s.auth.cookie });
+    expect((courses.json.courses as unknown[]).length).toBe(2); // kept for the Courses page
     const requests = w.log.length;
     expect(requests).toBeGreaterThan(5);
     expect(w.log.filter((l) => l.method === 'POST' && l.url.endsWith('/idp/sso'))).toHaveLength(1);

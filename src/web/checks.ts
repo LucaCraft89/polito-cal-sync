@@ -4,6 +4,7 @@ import { loadConfig } from '../config/index.js';
 import type { SettingsStore } from '../settings/store.js';
 import { IcsSource } from '../sources/ics/index.js';
 import { NoCache } from '../sources/ics/fetch.js';
+import { CourseCatalog } from '../sources/polito/catalog.js';
 import { PolitoPortalSource } from '../sources/polito/index.js';
 import { LoginLatch } from '../sources/polito/portal/latch.js';
 import type { RuntimeDeps } from '../sync/run.js';
@@ -193,6 +194,14 @@ export class SourceChecks {
         ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
       });
       const result = await source.fetch();
+      if (source.courseNames.size > 0) {
+        // The Courses page and the squad picker use the list the portal just gave.
+        new CourseCatalog(config.dataDir).write(
+          source.courseNames,
+          source.squadsSeen,
+          new Date(this.o.now()),
+        );
+      }
       const firstError = source.lastReport.find((r) => r.error)?.error;
       this.o.logger.info({ ok: result.complete }, 'ui login test done');
       return {
