@@ -1,23 +1,8 @@
 import { api } from '../api.js';
 import { button, confirmDialog, errorBanner, h, icon, loading, nextId, toast } from '../dom.js';
-import { secretField, segmentedField, switchField, textField } from '../forms.js';
+import { secretField, segmentedField, squadsField, switchField, textField } from '../forms.js';
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
-
-/** "309865=A, 309885=A" <-> { "309865": ["A"], ... } */
-export function parseSquads(text) {
-  const out = {};
-  for (const part of text.split(/[,\s]+/).filter(Boolean)) {
-    const [course, squad, ...more] = part.split('=');
-    if (!course || !squad || more.length) throw new Error(`"${part}" is not course=squad`);
-    (out[course] ??= []).push(squad);
-  }
-  return out;
-}
-export const squadsText = (v) =>
-  Object.entries(v ?? {})
-    .flatMap(([c, ss]) => ss.map((s) => `${c}=${s}`))
-    .join(', ');
 
 /** Sends a change, shows the result. Returns the new settings or undefined on failure. */
 export async function save(card, change, okText = 'Saved') {
@@ -50,8 +35,11 @@ export async function renderSources(rerender) {
   const body = h('div', { class: 'cards' }, loading('Loading…'));
   page.append(body);
   let settings;
+  let lastPreview;
   try {
     ({ settings } = await api('GET', '/api/settings'));
+    // The squads on offer come from the last preview (they are only known from the portal's lessons).
+    lastPreview = (await api('GET', '/api/preview').catch(() => ({}))).preview ?? null;
   } catch (err) {
     body.replaceChildren(errorBanner(err));
     return page;
@@ -91,11 +79,10 @@ export async function renderSources(rerender) {
       ['all', 'All open calls'],
     ],
   });
-  const squads = textField({
-    label: 'Your squads',
+  const squads = squadsField({
     view: s['polito.squads'],
-    value: squadsText(s['polito.squads'].value),
-    help: 'Course number = squad, separated by commas: 309865=A, 309742=2. Leave empty to keep every squad. "Preview" lists the course numbers and squads it sees.',
+    current: s['polito.squads'].value ?? {},
+    choices: lastPreview?.squads ?? [],
   });
   const portalCard = h(
     'form',
@@ -120,24 +107,10 @@ export async function renderSources(rerender) {
     }
     if (password.read()) set['polito.password'] = password.read();
     if (calls.read() !== calls.initial) set['polito.examCalls'] = calls.read();
-    if (squads.read() !== squads.initial) {
-      try {
-        const parsed = parseSquads(squads.read());
-        if (Object.keys(parsed).length) set['polito.squads'] = parsed;
-        else clearKeys.push('polito.squads');
-      } catch (e) {
-        portalCard
-          .querySelector('[data-error]')
-          .replaceChildren(
-            h(
-              'p',
-              { class: 'field-error', role: 'alert' },
-              icon('error'),
-              `Your squads: ${e.message}`,
-            ),
-          );
-        return;
-      }
+    if (squads.changed()) {
+      const next = squads.read();
+      if (Object.keys(next).length) set['polito.squads'] = next;
+      else clearKeys.push('polito.squads');
     }
     if (await save(portalCard, { set, clear: clearKeys })) rerender();
   });

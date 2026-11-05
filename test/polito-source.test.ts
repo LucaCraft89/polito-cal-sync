@@ -198,6 +198,11 @@ describe('Polito portal source: squads', () => {
     expect(ids(r)).not.toContain('lecture:9101');
     expect(ids(r)).not.toContain('lecture:9104');
     expect(s.notes).toEqual([]);
+    // the picker still needs every squad of the course, also the ones left out
+    expect([...s.squadsSeen]).toEqual([
+      ['5001', ['A', 'B']],
+      ['5002', ['2', '3']],
+    ]);
   });
 
   it('a squad setting for one course does not hide the note for another', async () => {

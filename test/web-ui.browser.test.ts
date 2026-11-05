@@ -9,6 +9,7 @@ import { scheme } from '../scripts/palette.js';
 import { SettingsStore } from '../src/settings/store.js';
 import { startHarness, PASS, type Harness } from './support/web.js';
 import { FEED, ics, previewWorld } from './support/preview-world.js';
+import { opts, PASS as PORTAL_PASS, USER, world as portalWorld } from './support/portal-world.js';
 
 // Real browser tests (Chromium via Playwright): responsive layout, accessibility (axe-core), keyboard,
 // reduced motion, CSP and stored-XSS rendering. They need a Chromium; without one they are skipped locally,
@@ -36,7 +37,7 @@ interface Watch {
 }
 
 /** Records everything that must never happen: page errors, CSP violations, requests to other origins. */
-function watch(page: Page, base: string): Watch {
+function watch(page: Page): Watch {
   const w: Watch = { problems: [] };
   page.on('pageerror', (e) => w.problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
@@ -45,7 +46,7 @@ function watch(page: Page, base: string): Watch {
       w.problems.push(`console: ${m.text()}`);
   });
   page.on('request', (r) => {
-    if (!r.url().startsWith(base) && !r.url().startsWith('data:'))
+    if (new URL(r.url()).hostname !== 'localhost' && !r.url().startsWith('data:'))
       w.problems.push(`foreign request: ${r.url()}`);
   });
   return w;
@@ -190,7 +191,7 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
     });
     contexts.push(ctx);
     const page = await ctx.newPage();
-    return { ctx, page, w: watch(page, base) };
+    return { ctx, page, w: watch(page) };
   };
 
   beforeAll(async () => {
@@ -574,6 +575,65 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await page.getByText('POLITO_USERNAME').first().waitFor();
     } finally {
       await h3.close();
+    }
+  });
+
+  it('squads are picked with checkboxes from the ones the preview saw', async () => {
+    const data = JSON.parse(
+      readFileSync(new URL('./fixtures/polito-portal/student-data.json', import.meta.url), 'utf8'),
+    ) as { data: { orari: { data: { lezioni: Record<string, unknown>[] } } } };
+    const lessons = data.data.orari.data.lezioni;
+    lessons[0] = { ...lessons[0], description: 'SQUADRA A' };
+    lessons[1] = { ...lessons[1], id: 9002, description: 'SQUADRA B' };
+    const w2 = previewWorld();
+    const portal = portalWorld({ data });
+    w2.deps.politoPortal = opts(portal.fetchImpl);
+    const h4 = await startHarness({
+      env: { TZ: 'Europe/Rome' },
+      app: { runDeps: w2.deps, previewMinIntervalMs: 0 },
+    });
+    try {
+      new SettingsStore(h4.dataDir).apply(
+        {
+          set: {
+            'polito.enabled': true,
+            'polito.username': USER,
+            'polito.password': PORTAL_PASS, // secret-scan:ignore
+          },
+        },
+        {},
+      );
+      const { page, w } = await newPage({ width: 390, height: 844 });
+      const b4 = `http://localhost:${h4.port}`;
+      await page.goto(`${b4}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+      await page.goto(`${b4}/#/sources`);
+      await waitPage(page, 'Run a preview'); // no preview yet: no checkboxes, a way to get them
+      await page.goto(`${b4}/#/preview`);
+      await page.getByRole('button', { name: 'Preview now' }).click();
+      await waitPage(page, 'To add');
+      await page.goto(`${b4}/#/sources`);
+      await waitPage(page, 'Squad A');
+      expect(await page.getByRole('checkbox', { name: 'Squad A' }).isChecked()).toBe(false);
+      expect(await page.getByRole('checkbox', { name: 'Squad B' }).isChecked()).toBe(false);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.getByRole('checkbox', { name: 'Squad B' }).check();
+      await page.getByRole('button', { name: 'Save' }).first().click();
+      await page.locator('.snackbar').getByText('Saved').waitFor();
+      expect(new SettingsStore(h4.dataDir).read()['polito.squads']).toEqual({ '5002': ['B'] });
+      // after saving, the choice is shown ticked; unticking everything keeps all squads again
+      await waitPage(page, 'Squad B');
+      expect(await page.getByRole('checkbox', { name: 'Squad B' }).isChecked()).toBe(true);
+      await page.getByRole('checkbox', { name: 'Squad B' }).uncheck();
+      await page.getByRole('button', { name: 'Save' }).first().click();
+      await page.locator('.snackbar').getByText('Saved').waitFor();
+      expect(new SettingsStore(h4.dataDir).read()['polito.squads']).toBeUndefined();
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h4.close();
     }
   });
 });

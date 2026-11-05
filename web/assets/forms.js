@@ -155,3 +155,78 @@ export function secretField({ label, view, help, onClear }) {
   );
   return { el, input, read: () => (entry.hidden ? '' : input.value) };
 }
+
+/**
+ * Squad picker: one group of checkboxes per course that has squads, fed by the last preview.
+ * Nothing ticked in a course = keep every squad of it. Courses we know nothing new about keep their setting.
+ */
+export function squadsField({ view, current, choices }) {
+  const el = h(
+    'div',
+    { class: 'stack-sm' },
+    h('span', { class: 'field-label', text: 'Your squads' }),
+  );
+  const groups = [];
+  for (const c of choices) {
+    const mine = current[c.courseId] ?? [];
+    const legend = c.name ? `${c.name} (course ${c.courseId})` : `Course ${c.courseId}`;
+    const box = h(
+      'fieldset',
+      { class: 'check-group', disabled: view?.locked },
+      h('legend', { text: legend }),
+    );
+    const inputs = [];
+    for (const label of c.labels) {
+      const input = h('input', { type: 'checkbox', value: label });
+      input.checked = mine.includes(label);
+      inputs.push(input);
+      box.append(h('label', { class: 'check-row' }, input, h('span', { text: `Squad ${label}` })));
+    }
+    groups.push({ id: c.courseId, inputs });
+    el.append(box);
+  }
+  const keptOnly = Object.keys(current).filter((id) => !choices.some((c) => c.courseId === id));
+  if (choices.length === 0) {
+    el.append(
+      h(
+        'p',
+        { class: 'field-help' },
+        'The squads of your courses appear here after a preview. Until then every squad is kept. ',
+        h('a', { href: '#/preview', text: 'Run a preview' }),
+        '.',
+      ),
+    );
+  } else {
+    el.append(
+      h('p', {
+        class: 'field-help',
+        text: 'Tick the squad you are in. A course with nothing ticked keeps all its squads.',
+      }),
+    );
+  }
+  if (keptOnly.length > 0) {
+    el.append(
+      h('p', {
+        class: 'field-help',
+        text: `Also saved, not seen in the last preview: ${keptOnly.map((id) => `${id}=${current[id].join('+')}`).join(', ')}. These stay as they are.`,
+      }),
+    );
+  }
+  el.append(lockedNote(view));
+  const read = () => {
+    const next = { ...current };
+    for (const g of groups) {
+      const picked = g.inputs.filter((i) => i.checked).map((i) => i.value);
+      if (picked.length > 0) next[g.id] = picked;
+      else delete next[g.id];
+    }
+    return next;
+  };
+  const norm = (o) =>
+    JSON.stringify(
+      Object.entries(o)
+        .map(([k, v]) => [k, [...v].sort()])
+        .sort(),
+    );
+  return { el, read, changed: () => norm(read()) !== norm(current) };
+}

@@ -627,3 +627,33 @@ dialog.dialog h2 {
   width: 100%;
   background: var(--c-success);
 }
+
+/* Checkbox rows (squad picker) */
+.check-group {
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--c-outline-variant);
+  min-width: 0;
+}
+.check-group legend {
+  padding: 0 var(--s-1);
+  font-weight: 500;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 48px;
+  cursor: pointer;
+}
+.check-row input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--c-primary);
+  flex: none;
+}

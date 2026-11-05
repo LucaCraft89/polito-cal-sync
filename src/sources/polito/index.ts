@@ -70,6 +70,8 @@ export class PolitoPortalSource implements Source {
   notes: string[] = [];
   /** `polito:<course id>` -> course name, from the course list (feeds course-names for decision 013). */
   courseNames = new Map<string, string>();
+  /** course id -> every squad label seen in the last fetch (sorted). */
+  squadsSeen = new Map<string, string[]>();
   private readonly latch: LoginLatch;
 
   constructor(private readonly o: PolitoSourceOptions) {
@@ -116,6 +118,7 @@ export class PolitoPortalSource implements Source {
     const carico = section(sections, 'carico');
 
     this.notes = [];
+    this.squadsSeen = new Map();
     const ctx = { tz: this.o.tz };
     const reports: SectionReport[] = [];
     const events = new Map<string, CanonicalEvent>();
@@ -160,6 +163,8 @@ export class PolitoPortalSource implements Source {
     if (lezioni) {
       const lectures = mapLectures(lezioni, ctx, this.o.squads);
       this.notes.push(...(lectures.notes ?? []));
+      for (const [id, labels] of lectures.squadsSeen ?? [])
+        this.squadsSeen.set(id, [...labels].sort());
       take('orari', lezioni, lectures);
     } else missing('orari');
     if (appelli)

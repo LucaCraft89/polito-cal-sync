@@ -17,6 +17,8 @@ export const STUDENT_DATA_PATH = '/pls/portal30/sviluppo.studente.getStudentData
 export interface Mapped {
   /** Hints for the user (not errors), e.g. which squads exist. */
   notes?: string[];
+  /** course id -> every squad label seen in its lessons (also when the student already chose one). */
+  squadsSeen?: Map<string, Set<string>>;
   events: CanonicalEvent[];
   /** Positions and field names only, never content. A non-empty list makes the result incomplete. */
   issues: string[];
@@ -140,12 +142,16 @@ export function mapLectures(
   squads: Squads = new Map(),
 ): Mapped {
   const seen = new Map<string, Set<string>>(); // courses with squads but no setting -> labels seen
+  const all = new Map<string, Set<string>>(); // every course with squads -> every label seen
   const mapped = build('orari.lezioni', items, (raw) => {
     const p = lectureSchema.safeParse(raw);
     if (!p.success) return p.error;
     const l = p.data;
     const label = SQUAD.exec(l.description?.trim() ?? '')?.[1]?.toUpperCase();
     if (label && l.courseId) {
+      const every = all.get(l.courseId) ?? new Set<string>();
+      every.add(label);
+      all.set(l.courseId, every);
       const mine = squads.get(l.courseId);
       if (mine) {
         if (!mine.has(label)) return []; // another squad: validated above, left out on purpose
@@ -177,6 +183,7 @@ export function mapLectures(
       },
     ];
   });
+  if (all.size > 0) mapped.squadsSeen = all;
   if (seen.size > 0) {
     const list = [...seen]
       .map(([id, labels]) => `${id} (${[...labels].sort().join(', ')})`)

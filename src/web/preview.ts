@@ -29,6 +29,16 @@ export interface ProblemView {
   docs: string;
 }
 
+export interface SquadChoice {
+  courseId: string;
+  /** Course name when the portal gave one. */
+  name?: string;
+  /** Every squad seen in this course's lessons. */
+  labels: string[];
+  /** The squads currently chosen (empty = all are kept). */
+  chosen: string[];
+}
+
 export interface PreviewView {
   generatedAt: string;
   /** True when every source came back complete (nothing is held back from deletion). */
@@ -44,6 +54,8 @@ export interface PreviewView {
   incompleteSources: string[];
   notes: string[];
   problems: ProblemView[];
+  /** Courses that have squads, for the picker on the Sources page. */
+  squads: SquadChoice[];
   creates: EventView[];
   patches: EventView[];
   deletes: EventView[];
@@ -63,7 +75,11 @@ function problem(e: UserError, source?: string): ProblemView {
 }
 
 /** Plain, JSON-safe view of a dry run. Event text is untrusted; the browser shows it as text only. */
-export function toPreview(out: RunOutput, at: Date): PreviewView {
+export function toPreview(
+  out: RunOutput,
+  at: Date,
+  chosenSquads: Readonly<Record<string, readonly string[]>> = {},
+): PreviewView {
   const { plan } = out.report;
   const view = (e: CanonicalEvent): EventView => {
     const name = e.course ? out.courseNames.get(e.course) : undefined;
@@ -100,6 +116,15 @@ export function toPreview(out: RunOutput, at: Date): PreviewView {
     incompleteSources: plan.incompleteSources,
     notes: out.sourceNotes.map(clean),
     problems,
+    squads: [...out.squadsSeen].map(([courseId, labels]) => {
+      const name = out.courseNames.get(`polito:${courseId}`);
+      return {
+        courseId,
+        ...(name ? { name } : {}),
+        labels: [...labels],
+        chosen: [...(chosenSquads[courseId] ?? [])],
+      };
+    }),
     creates: plan.creates.map((c) => view(c.event)),
     patches: plan.patches.map((c) => view(c.event)),
     deletes: plan.deletes.map((d) => ({
@@ -175,7 +200,7 @@ export class PreviewService {
         { config, logger: this.o.logger, ...(this.o.deps ? { deps: this.o.deps } : {}) },
         { dryRun: true, force: false },
       );
-      this.last = toPreview(out, new Date(this.o.now()));
+      this.last = toPreview(out, new Date(this.o.now()), config.polito.squads);
       this.o.logger.info(
         {
           creates: this.last.counts.creates,

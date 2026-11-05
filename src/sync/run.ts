@@ -40,6 +40,8 @@ export interface RunOutput {
   sourceNotes: string[];
   /** `polito:<course id>` -> course name (empty when the portal is off or failed). */
   courseNames: ReadonlyMap<string, string>;
+  /** Polito course id -> every squad label seen (empty when the portal is off or failed). */
+  squadsSeen: ReadonlyMap<string, readonly string[]>;
 }
 
 /** The sources switched on by the configuration: the ICS feeds and, if enabled, the Polito portal. */
@@ -178,6 +180,7 @@ export async function runConfiguredSync(
       sourceErrors,
       sourceNotes: polito?.notes ?? [],
       courseNames: polito?.courseNames ?? new Map(),
+      squadsSeen: polito?.squadsSeen ?? new Map(),
     };
   } finally {
     state?.close();
