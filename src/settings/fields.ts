@@ -94,6 +94,14 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     read: (c) => c.polito.enabled,
   }),
   field({
+    key: 'moodle.enabled',
+    env: 'SOURCE_MOODLE_ENABLED',
+    secret: false,
+    value: z.boolean(),
+    toEnv: (v) => String(v),
+    read: (c) => c.moodle.enabled,
+  }),
+  field({
     key: 'polito.username',
     env: 'POLITO_USERNAME',
     secret: false,

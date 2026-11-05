@@ -73,6 +73,13 @@ const envSchema = z.object({
       .default('false')
       .transform((v) => v === 'true'),
   ),
+  SOURCE_MOODLE_ENABLED: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(['true', 'false'], 'must be true or false')
+      .default('false')
+      .transform((v) => v === 'true'),
+  ),
   POLITO_EXAM_CALLS: z.preprocess(
     emptyToUndefined,
     z.enum(['booked', 'all'], 'must be booked or all').default('booked'),
@@ -195,6 +202,8 @@ export interface Config {
   /** Host of the Moodle site: events from a feed on this host are labelled as Moodle events. */
   moodleHost: string;
   moodleBaseUrl: string;
+  /** Live Moodle events through the mobile web service, with the same university login as the portal. */
+  moodle: { enabled: boolean };
   /** Local status page: port 0 turns it off. */
   status: { port: number; bind: string };
   /**
@@ -272,6 +281,7 @@ export function loadConfig(
     icsUrls: splitList(v.SOURCE_POLITO_ICS_URLS ?? ''),
     moodleHost: new URL(v.MOODLE_BASE_URL).hostname,
     moodleBaseUrl: v.MOODLE_BASE_URL,
+    moodle: { enabled: v.SOURCE_MOODLE_ENABLED },
     polito: {
       enabled: v.SOURCE_POLITO_PORTAL_ENABLED,
       examCalls: v.POLITO_EXAM_CALLS,

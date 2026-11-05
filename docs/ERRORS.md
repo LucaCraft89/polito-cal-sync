@@ -208,6 +208,12 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **Why:** retrying a refused password every hour could get the account locked.
 **What to do:** check the credentials in a browser, fix `POLITO_USERNAME` / `POLITO_PASSWORD` in `.env`. The pause ends by itself as soon as they change.
 
+## E_MOODLE_API_ERROR
+
+**What happened:** Moodle answered a web-service call with an error (the error name is in the message), so the live Moodle source returned nothing this run.
+**Why:** the web service may be switched off for your account, Moodle refused the token again right after a fresh login, or a function is not allowed.
+**What to do:** nothing was deleted; the next run tries again. Run `node probe/06-moodle-token.mjs` to see what Moodle allows. The Moodle calendar feed (use `preset_time=custom` in its link) still works as a fallback.
+
 ## E_SETTINGS_FILE_INVALID
 
 **What happened:** the file with the settings saved by the web UI (`DATA_DIR/settings.json`) could not be used.

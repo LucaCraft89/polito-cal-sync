@@ -414,6 +414,16 @@ export function createWebApp(o: WebAppOptions): WebApp {
     },
     {
       method: 'POST',
+      path: '/api/sources/moodle/test',
+      auth: true,
+      json: true,
+      run: async (c) => {
+        parseBody(z.object({}).strict(), c.body);
+        return { status: 200, body: await checks.testMoodle() };
+      },
+    },
+    {
+      method: 'POST',
       path: '/api/sources/polito/resume',
       auth: true,
       json: true,

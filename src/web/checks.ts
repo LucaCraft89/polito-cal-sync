@@ -5,6 +5,7 @@ import type { SettingsStore } from '../settings/store.js';
 import { IcsSource } from '../sources/ics/index.js';
 import { NoCache } from '../sources/ics/fetch.js';
 import { CourseCatalog } from '../sources/polito/catalog.js';
+import { MoodleSource } from '../sources/moodle/index.js';
 import { PolitoPortalSource } from '../sources/polito/index.js';
 import { LoginLatch } from '../sources/polito/portal/latch.js';
 import type { RuntimeDeps } from '../sync/run.js';
@@ -41,6 +42,15 @@ export interface LoginTestView {
   nextAllowedAt: string | null;
 }
 
+export interface MoodleTestView {
+  ok: boolean;
+  /** Events in the window of a year each way (hidden ones left out). */
+  events: number;
+  courses: number;
+  problem?: ProblemView;
+  nextAllowedAt: string | null;
+}
+
 export interface ChecksOptions {
   dataDir: string;
   env: NodeJS.ProcessEnv;
@@ -63,6 +73,8 @@ const fingerprint = (...parts: string[]): string =>
 export class SourceChecks {
   private feedBusy = false;
   private loginBusy = false;
+  private moodleBusy = false;
+  private readonly moodleLogins: RateGate;
   private readonly feeds: RateGate;
   private readonly logins: RateGate;
 
@@ -73,6 +85,7 @@ export class SourceChecks {
       globalMax: FEED_TEST_MAX_PER_WINDOW,
     });
     this.logins = new RateGate({ minIntervalMs: LOGIN_TEST_MIN_INTERVAL_MS, now: o.now });
+    this.moodleLogins = new RateGate({ minIntervalMs: LOGIN_TEST_MIN_INTERVAL_MS, now: o.now });
   }
 
   private config() {
@@ -220,6 +233,61 @@ export class SourceChecks {
       };
     } finally {
       this.loginBusy = false;
+    }
+  }
+
+  /** Test button of the live Moodle source: the source itself (it logs in only when it has no usable token). */
+  async testMoodle(): Promise<MoodleTestView> {
+    const config = this.config();
+    const { username, password } = config.polito;
+    if (!username || !password) {
+      throw new UserError({
+        code: 'E_NOT_CONFIGURED',
+        what: 'The university login is not saved yet, so there is nothing to test.',
+        why: 'Moodle uses the same username and password as the Polito portal, and they are empty.',
+        action: 'Enter both in the Polito portal card, press Save, then test.',
+      });
+    }
+    if (this.moodleBusy) throw this.busy('Moodle');
+    try {
+      new LoginLatch(config.dataDir).assertOpen(username, password);
+    } catch (err) {
+      return {
+        ok: false,
+        events: 0,
+        courses: 0,
+        problem: problem(toUserError(err)),
+        nextAllowedAt: null,
+      };
+    }
+    const key = fingerprint('moodle', username, password);
+    const wait = this.moodleLogins.waitMs(key);
+    if (wait > 0) throw this.limited(wait, 'Moodle login');
+    this.moodleBusy = true;
+    this.moodleLogins.start(key);
+    try {
+      const deps = this.o.deps ?? {};
+      const source = new MoodleSource({
+        username,
+        password,
+        baseUrl: config.moodleBaseUrl,
+        dataDir: config.dataDir,
+        logger: this.o.logger,
+        ...(deps.now ? { now: deps.now } : {}),
+        ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
+      });
+      const result = await source.fetch();
+      const err = source.lastReport.find((r) => r.error)?.error;
+      this.o.logger.info({ ok: result.complete }, 'ui moodle test done');
+      return {
+        ok: result.complete,
+        events: result.events.length,
+        courses: source.courseNames.size,
+        ...(err ? { problem: problem(err) } : {}),
+        nextAllowedAt: new Date(this.o.now() + LOGIN_TEST_MIN_INTERVAL_MS).toISOString(),
+      };
+    } finally {
+      this.moodleBusy = false;
     }
   }
 }

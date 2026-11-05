@@ -70,11 +70,17 @@ Checks the data folder, the clock, the history database, the Google login and ca
 
 ## Moodle
 
-The Moodle calendar export link is a plain calendar feed, so it works as a source, but it only contains what Moodle puts in the export, and **it is not complete**: measured on one account (decision 034), the export holds events from the start of the current month only (the "Recent and next 60 days" and "This month" choices end after about 15 days; **"Custom range" reaches about a year ahead and is the best choice**), and the Moodle calendar page shows more events than the export contains. A route through Moodle's mobile web service works (no MFA; `probe/06`, `07`) and a source built on it is planned (`docs/decisions/033`, `034`); it is not built yet.
+Two ways, pick one (using both shows every event twice):
+
+- **Live Moodle events (recommended).** On **Sources → Moodle**, switch on "Live Moodle events" and press **Test Moodle**. It reads your Moodle calendar through Moodle's app service on every sync, from a year back to a year ahead, with the course of each event, and needs **no link to copy or regenerate**. It uses the same university username and password as the Polito portal card (save them there; the portal switch can stay off). It logs in once through the university single sign-on, keeps the app token in the data folder (a private file) and reuses it until Moodle refuses it, so a normal sync is three small requests. A refused password is paused for both Moodle and the portal (one account, one pause). If the university ever asks for an extra login step, the source stops and says so. Events from a Moodle feed that you added earlier become duplicates: remove that feed first.
+- **The calendar feed link.** Works without a password, but the export is limited by its time window. Take the link from Moodle's "Import or export calendars" and change `preset_time=recentupcoming` at the end to `preset_time=custom` (about a year ahead); the other choices stop after about 15 days. It holds nothing from before the 1st of the current month. Each fetch is fresh, not a one-time export.
+
+Evidence and the limits of what was measured (one account): `docs/decisions/033` to `036`.
 
 ## Limits to know
 
 - This writes to your real Google Calendar, into a calendar of its own.
 - The web page stores your Polito password and the Google client secret in clear text in the data folder (mode 0600). Docker volume or disk encryption is your protection.
-- Not built yet: one calendar per course, Moodle web-service source.
+- Not built yet: one calendar per course.
+- The live Moodle source was verified against an invented Moodle in tests and its login and calls were shaped from probe runs on one real account; the program itself has not synced from the real Moodle yet. The token's lifetime is unknown (it is simply replaced when Moodle refuses it).
 - Run against real Google: **not yet by the author** (see README, "What is tested").

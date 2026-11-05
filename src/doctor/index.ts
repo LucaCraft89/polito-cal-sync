@@ -11,6 +11,7 @@ import { authorizedClient, clientCredentials, TokenStore } from '../google/oauth
 import { evaluateHealth, HeartbeatStore } from '../serve/heartbeat.js';
 import { IcsSource } from '../sources/ics/index.js';
 import { NoCache } from '../sources/ics/fetch.js';
+import { MoodleSource } from '../sources/moodle/index.js';
 import { PolitoPortalSource } from '../sources/polito/index.js';
 import { LoginLatch } from '../sources/polito/portal/latch.js';
 import { StateStore } from '../sync/state.js';
@@ -167,6 +168,7 @@ export async function runDoctor(o: DoctorOptions): Promise<Check[]> {
     );
   }
   if (config.polito.enabled) checks.push(await politoCheck(o, net));
+  if (config.moodle.enabled) checks.push(await moodleCheck(o, net));
 
   // 6. last sync
   checks.push(lastSyncCheck(config, deps.now));
@@ -257,6 +259,47 @@ async function politoCheck(o: DoctorOptions, net: boolean): Promise<Check> {
     'polito',
     label,
     `logged in, ${source.courseNames.size} course(s), every part understood`,
+  );
+}
+
+async function moodleCheck(o: DoctorOptions, net: boolean): Promise<Check> {
+  const { config, deps = {} } = o;
+  const label = 'Moodle (live)';
+  const { username, password } = config.polito;
+  if (!username || !password) {
+    return fail(
+      'moodle',
+      label,
+      new UserError({
+        code: 'E_NOT_CONFIGURED',
+        what: 'The live Moodle source is switched on, but the university login is not set.',
+        why: 'Moodle uses the same username and password as the Polito portal.',
+        action: 'Enter them under Sources (Polito portal card).',
+      }),
+    );
+  }
+  try {
+    new LoginLatch(config.dataDir).assertOpen(username, password);
+  } catch (err) {
+    return fail('moodle', label, err);
+  }
+  if (!net) return skipped('moodle', label, 'login saved; not contacted (--local)');
+  const source = new MoodleSource({
+    username,
+    password,
+    baseUrl: config.moodleBaseUrl,
+    dataDir: config.dataDir,
+    logger: o.logger,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
+  });
+  const result = await source.fetch();
+  const err = source.lastReport.find((r) => r.error)?.error;
+  if (err) return fail('moodle', label, err, result.complete ? 'warn' : 'fail');
+  return ok(
+    'moodle',
+    label,
+    `${result.events.length} event(s) in ${source.courseNames.size} course(s)`,
   );
 }
 

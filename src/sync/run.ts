@@ -3,6 +3,7 @@ import { ensureDataDir, type Config } from '../config/index.js';
 import { OwnedCalendar } from '../google/calendar.js';
 import { connectGoogle, type GoogleRuntime } from '../google/runtime.js';
 import { IcsSource, type FeedReport } from '../sources/ics/index.js';
+import { MoodleSource } from '../sources/moodle/index.js';
 import { CourseCatalog } from '../sources/polito/catalog.js';
 import { PolitoPortalSource } from '../sources/polito/index.js';
 import type { PortalOptions } from '../sources/polito/portal/login.js';
@@ -50,9 +51,10 @@ export function buildSources(ctx: RunContext): {
   sources: Source[];
   ics?: IcsSource;
   polito?: PolitoPortalSource;
+  moodle?: MoodleSource;
 } {
   const { config, logger, deps = {} } = ctx;
-  if (config.icsUrls.length === 0 && !config.polito.enabled) {
+  if (config.icsUrls.length === 0 && !config.polito.enabled && !config.moodle.enabled) {
     throw new UserError({
       code: 'E_NOT_CONFIGURED',
       what: 'No source is enabled, so there is nothing to sync.',
@@ -92,7 +94,34 @@ export function buildSources(ctx: RunContext): {
     });
     sources.push(polito);
   }
-  return { sources, ...(ics ? { ics } : {}), ...(polito ? { polito } : {}) };
+  let moodle: MoodleSource | undefined;
+  if (config.moodle.enabled) {
+    const { username, password } = config.polito;
+    if (!username || !password) {
+      throw new UserError({
+        code: 'E_NOT_CONFIGURED',
+        what: 'The live Moodle source is switched on, but the university login is not set.',
+        why: 'Moodle uses the same username and password as the Polito portal, and they are empty.',
+        action: 'Enter them under Sources (Polito portal card), or switch the Moodle source off.',
+      });
+    }
+    moodle = new MoodleSource({
+      username,
+      password,
+      baseUrl: config.moodleBaseUrl,
+      dataDir: config.dataDir,
+      logger,
+      ...(deps.now ? { now: deps.now } : {}),
+      ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
+    });
+    sources.push(moodle);
+  }
+  return {
+    sources,
+    ...(ics ? { ics } : {}),
+    ...(polito ? { polito } : {}),
+    ...(moodle ? { moodle } : {}),
+  };
 }
 
 function buildIcs(ctx: RunContext): IcsSource {
@@ -125,7 +154,7 @@ function buildIcs(ctx: RunContext): IcsSource {
  */
 export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): Promise<RunOutput> {
   const { config, logger, deps = {} } = ctx;
-  const { sources, ics, polito } = buildSources(ctx);
+  const { sources, ics, polito, moodle } = buildSources(ctx);
   ensureDataDir(config.dataDir);
   const lock = options.dryRun ? undefined : acquireRunLock(config.dataDir, deps.now);
   let state: StateStore | undefined;
@@ -169,6 +198,9 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
     for (const r of polito?.lastReport ?? []) {
       if (r.error) sourceErrors.push({ source: polito?.id ?? 'polito', error: r.error });
     }
+    for (const r of moodle?.lastReport ?? []) {
+      if (r.error) sourceErrors.push({ source: moodle?.id ?? 'moodle', error: r.error });
+    }
     state = options.dryRun ? undefined : StateStore.open(StateStore.fileIn(config.dataDir));
     const report = await runSync(
       {
@@ -189,7 +221,7 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
       feeds: ics?.lastReport ?? [],
       sourceErrors,
       sourceNotes: polito?.notes ?? [],
-      courseNames: polito?.courseNames ?? new Map(),
+      courseNames: new Map([...(polito?.courseNames ?? []), ...(moodle?.courseNames ?? [])]),
       squadsSeen: polito?.squadsSeen ?? new Map(),
     };
   } finally {

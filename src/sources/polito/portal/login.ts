@@ -18,6 +18,11 @@ export interface PortalOptions {
   pauseMs?: number;
   sleep?: (ms: number) => Promise<void>;
   maxRequests?: number;
+  /**
+   * A redirect whose Location starts with this (the Moodle app's custom scheme) ends the login and is kept in
+   * `PortalSession.captured`; it is never requested.
+   */
+  captureScheme?: string;
 }
 
 const unexpected = (what: string): UserError =>
@@ -46,6 +51,8 @@ const fetchFailed = (what: string, cause?: unknown): UserError =>
  */
 export class PortalSession {
   requests = 0;
+  /** The redirect target that matched `captureScheme`, when the login ended that way. */
+  captured: string | undefined;
   private last = 0;
 
   private constructor(
@@ -122,6 +129,10 @@ export class PortalSession {
       form = undefined;
       const loc = res.headers.get('location');
       if (res.status >= 300 && res.status < 400 && loc) {
+        if (this.o.captureScheme && loc.startsWith(this.o.captureScheme)) {
+          this.captured = loc;
+          return;
+        }
         url = new URL(loc, url);
         continue;
       }

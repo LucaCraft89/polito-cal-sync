@@ -73,6 +73,22 @@ function feedResult(r) {
   return h('div', { class: 'stack-sm' }, ...nodes);
 }
 
+function moodleResult(r) {
+  const nodes = [];
+  if (r.ok) {
+    nodes.push(
+      banner(
+        'ok',
+        'Moodle works',
+        `${plural(r.events, ['event', 'events'])} in ${plural(r.courses, ['course', 'courses'])}, from a year back to a year ahead. Nothing was saved or written to your calendar.`,
+      ),
+    );
+  } else if (r.problem) {
+    nodes.push(errorBanner({ detail: r.problem }));
+  }
+  return h('div', { class: 'stack-sm' }, ...nodes);
+}
+
 function loginResult(r) {
   const nodes = [];
   const counts = r.sections
@@ -317,30 +333,49 @@ export async function renderSources(rerender) {
   });
 
   // ---- Moodle ----
+  const moodleOn = switchField({
+    label: 'Live Moodle events',
+    help: 'Reads your Moodle calendar (deadlines, quizzes, reservations) every sync, with the university login saved in the Polito portal card. It includes past events and the course of each one. If you also added a Moodle calendar feed above, remove that feed: the same events would appear twice.',
+    view: s['moodle.enabled'],
+    checked: s['moodle.enabled']?.value === true,
+  });
   const moodle = textField({
     label: 'Moodle address',
     view: s.moodleBaseUrl,
     value: s.moodleBaseUrl.value ?? '',
     type: 'url',
     inputmode: 'url',
-    help: 'Feeds on this site are labelled [Moodle] in your calendar.',
+    help: 'Events from feeds on this site are labelled [Moodle] in your calendar.',
   });
   const moodleCard = h(
     'form',
     { class: 'card', novalidate: true, 'aria-labelledby': 'h-moodle' },
     h('h2', { id: 'h-moodle', text: 'Moodle' }),
+    moodleOn.el,
     moodle.el,
     errSlot(),
+    h('div', { class: 'stack-sm', 'aria-live': 'polite', 'data-test-result': 'moodle' }),
     h(
       'div',
       { class: 'card-actions' },
-      button('Save', { type: 'submit', disabled: s.moodleBaseUrl.locked }),
+      button('Test Moodle', { variant: 'outlined', iconName: 'play', id: 'test-moodle' }),
+      button('Save', {
+        type: 'submit',
+        disabled: s.moodleBaseUrl.locked && s['moodle.enabled'].locked,
+      }),
     ),
   );
+  moodleCard.querySelector('#test-moodle').addEventListener('click', (ev) => {
+    const slot = moodleCard.querySelector('[data-test-result]');
+    void runTest(ev.currentTarget, slot, '/api/sources/moodle/test', {}, moodleResult);
+  });
   moodleCard.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (moodle.read() === moodle.initial) return toast('Nothing to change');
-    if (await save(moodleCard, { set: { moodleBaseUrl: moodle.read() } })) rerender();
+    const set = {};
+    if (moodleOn.read() !== moodleOn.initial) set['moodle.enabled'] = moodleOn.read();
+    if (moodle.read() !== moodle.initial) set.moodleBaseUrl = moodle.read();
+    if (Object.keys(set).length === 0) return toast('Nothing to change');
+    if (await save(moodleCard, { set })) rerender();
   });
 
   body.replaceChildren(portalCard, feedCard, moodleCard);
