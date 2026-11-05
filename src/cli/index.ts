@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { google } from 'googleapis';
-import { ensureDataDir, loadConfig } from '../config/index.js';
+import { ensureDataDir } from '../config/index.js';
 import { createGoogleEventsApi } from '../google/adapter.js';
 import { OwnedCalendar } from '../google/calendar.js';
 import {
@@ -20,6 +20,7 @@ import { verifyGoogle } from '../google/verify.js';
 import { evaluateHealth, HeartbeatStore } from '../serve/heartbeat.js';
 import { ServeLoop } from '../serve/loop.js';
 import { createStatusServer } from '../serve/status.js';
+import { loadConfigFromDisk } from '../settings/store.js';
 import { runSync } from '../sync/engine.js';
 import { formatReport } from '../sync/format.js';
 import { runConfiguredSync, type RuntimeDeps } from '../sync/run.js';
@@ -27,6 +28,8 @@ import { StateStore } from '../sync/state.js';
 import { formatUserError, toUserError, UserError } from '../util/errors.js';
 import { createLogger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
+import { PassphraseStore } from '../web/auth.js';
+import { createWebApp } from '../web/app.js';
 import { loadFixture } from './fixture.js';
 import type { EventsApi } from '../google/types.js';
 import type { FeedReport } from '../sources/ics/index.js';
@@ -75,6 +78,9 @@ Commands
   serve           Sync every SYNC_INTERVAL_MINUTES, with a status page on STATUS_PORT.
   healthcheck     Exit 0 if the data folder and state database are usable and, when
                   "serve" runs, its last sync is recent (used by Docker).
+  reset-ui-passphrase
+                  Forget the web UI passphrase (needs access to the data folder), so the
+                  first-run page asks for a new one. Settings and logins are kept.
   doctor          Check the setup (not available yet: M5).
 
 Exit codes: 0 ok, 1 error, 2 refused / partial / failed run, or a dry run that would be refused.`;
@@ -123,7 +129,7 @@ async function syncCommand(
     fixture: { type: 'string' },
   });
 
-  const config = loadConfig(env);
+  const config = loadConfigFromDisk(env);
   const dryRun = values['dry-run'] === true;
   const force = values.force === true;
   const logger = createLogger(env['LOG_LEVEL'] ? config.logLevel : 'warn', io.logStream);
@@ -203,7 +209,7 @@ async function authCommand(
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw usageError('--port must be a port number.');
 
-  const config = loadConfig(env);
+  const config = loadConfigFromDisk(env);
   ensureDataDir(config.dataDir);
   const creds = clientCredentials(config.google);
   const oauthClient = new google.auth.OAuth2(creds.clientId, creds.clientSecret);
@@ -244,7 +250,7 @@ async function authCommand(
 }
 
 async function verifyCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): Promise<number> {
-  const config = loadConfig(env);
+  const config = loadConfigFromDisk(env);
   ensureDataDir(config.dataDir);
   let admin = deps.oauth?.calendars;
   let api = deps.oauth?.eventsApi;
@@ -275,7 +281,7 @@ async function verifyCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): 
 }
 
 async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): Promise<number> {
-  const config = loadConfig(env);
+  const config = loadConfigFromDisk(env);
   ensureDataDir(config.dataDir);
   const logger = createLogger(config.logLevel, io.logStream);
   const heartbeat = new HeartbeatStore(config.dataDir);
@@ -285,8 +291,19 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
     logger,
     ...(deps.now ? { now: deps.now } : {}),
     runOnce: async () => {
+      // Settings saved by the web UI (sources, login, squads) apply from the next run; the interval and the
+      // status port need a restart. A settings file that became invalid keeps the previous settings.
+      let live = config;
+      try {
+        live = loadConfigFromDisk(env);
+      } catch (err) {
+        logger.warn(
+          { code: toUserError(err).code },
+          'settings could not be reloaded; using the previous ones',
+        );
+      }
       const out = await runConfiguredSync(
-        { config, logger, deps },
+        { config: live, logger, deps },
         { dryRun: false, force: false },
       );
       const warning = out.feeds.find((f) => f.error)?.error ?? out.sourceErrors[0]?.error;
@@ -295,15 +312,31 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   });
 
   let statusServer: ReturnType<typeof createStatusServer> | undefined;
+  if (config.ui.enabled && config.status.port === 0) {
+    logger.warn('UI_ENABLED is true but STATUS_PORT is 0, so the web UI API is not started');
+  }
   if (config.status.port !== 0) {
+    const web = config.ui.enabled
+      ? createWebApp({
+          dataDir: config.dataDir,
+          env,
+          logger,
+          allowedHosts: config.ui.allowedHosts,
+          https: config.ui.https,
+        })
+      : undefined;
     statusServer = createStatusServer(() => loop.snapshot(), {
+      ...(web ? { web } : {}),
       bind: config.status.bind,
       port: config.status.port,
       ...(deps.now ? { now: deps.now } : {}),
     });
     try {
       const listening = await statusServer.listen();
-      logger.info({ port: listening, bind: config.status.bind }, 'status page listening');
+      logger.info(
+        { port: listening, bind: config.status.bind, ui: config.ui.enabled },
+        'status page listening',
+      );
     } catch (err) {
       logger.warn({ err }, 'the status page could not start; syncing goes on without it');
       statusServer = undefined;
@@ -329,8 +362,19 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   return 0;
 }
 
+function resetUiPassphrase(env: NodeJS.ProcessEnv, io: CliIo): number {
+  const config = loadConfigFromDisk(env);
+  const done = new PassphraseStore(config.dataDir).reset();
+  io.out(
+    done
+      ? 'The web UI passphrase was removed. Open the UI: it asks for a new one. Settings were not changed.'
+      : 'No web UI passphrase was set; nothing to reset.',
+  );
+  return 0;
+}
+
 function healthcheck(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): number {
-  const config = loadConfig(env);
+  const config = loadConfigFromDisk(env);
   ensureDataDir(config.dataDir);
   StateStore.probe(StateStore.fileIn(config.dataDir));
   const health = evaluateHealth(
@@ -378,6 +422,8 @@ export async function runCli(
         return await serveCommand(env, io, deps);
       case 'healthcheck':
         return healthcheck(env, io, deps);
+      case 'reset-ui-passphrase':
+        return resetUiPassphrase(env, io);
       case 'doctor':
         throw new UserError({
           code: 'E_NOT_IMPLEMENTED',

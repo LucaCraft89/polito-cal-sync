@@ -201,3 +201,69 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **What happened:** the Polito login is paused because these exact credentials were refused earlier.
 **Why:** retrying a refused password every hour could get the account locked.
 **What to do:** check the credentials in a browser, fix `POLITO_USERNAME` / `POLITO_PASSWORD` in `.env`. The pause ends by itself as soon as they change.
+
+## E_SETTINGS_FILE_INVALID
+
+**What happened:** the file with the settings saved by the web UI (`DATA_DIR/settings.json`) could not be used.
+**Why:** it was edited by hand, damaged, has a setting with the wrong shape, or was written by a newer version of this program.
+**What to do:** fix the file or move it away (keep a copy first), then start again. Settings in `.env` are not affected. The message names the problem (a setting key or "not valid JSON"), never a value.
+
+## E_SETTING_INVALID
+
+**What happened:** a setting was not saved because its value breaks a rule.
+**Why:** the web UI applies exactly the same rules as `.env` (for example the sync interval is 15 to 1440 minutes, the exam calls setting is `booked` or `all`).
+**What to do:** correct the listed settings and save again. Nothing was changed; a change is saved completely or not at all. The message names the setting and the rule, never the value.
+
+## E_SETTING_LOCKED
+
+**What happened:** a setting was not changed because an environment variable controls it.
+**Why:** a value in `.env` or in the container environment always wins over the UI, so a change here would have no effect.
+**What to do:** change it where it is set (the message names the variable), or remove that variable to manage the setting in the UI.
+
+## E_UI_HOST_REFUSED
+
+**What happened:** the web UI refused the request because of the address it was reached through.
+**Why:** the `Host` header is not `localhost`, `127.0.0.1` or `[::1]` (or a name you added to `UI_ALLOWED_HOSTS`). This protects against web pages that try to reach the UI through your browser (DNS rebinding). The first-run passphrase step is further limited to the localhost names, because whoever opens the page first chooses the passphrase.
+**What to do:** open the UI as `http://localhost:<port>` on the machine that runs the service. Behind your own reverse proxy, list its name in `UI_ALLOWED_HOSTS` (and set `UI_HTTPS=true` if the proxy terminates TLS).
+
+## E_UI_REQUEST_REFUSED
+
+**What happened:** the web UI refused a request before acting on it.
+**Why:** one of: the CSRF token is missing or wrong; the request does not come from the UI page itself (`Origin` or `Sec-Fetch-Site` mismatch); the body is not a JSON object, is larger than 256 KB or has unexpected fields; the method is not allowed at that address. Changes are accepted only from the UI itself so that other web pages cannot send them.
+**What to do:** use the UI in the browser and reload the page if it was open for a long time. When testing with `curl`, send the `Origin` header of the page, the `X-CSRF-Token` header from `GET /api/session`, and `Content-Type: application/json`.
+
+## E_UI_AUTH_REQUIRED
+
+**What happened:** the request needs a login and there is none.
+**Why:** you are not logged in, or the session ended (30 minutes without use, 12 hours in total, a passphrase change or a restart of the service).
+**What to do:** log in with the UI passphrase.
+
+## E_UI_LOGIN_FAILED
+
+**What happened:** the passphrase was not correct.
+**Why:** it does not match the one chosen on first run (or, when changing it, the current one).
+**What to do:** type it again. After a few wrong tries you must wait (E_UI_LOGIN_THROTTLED). If it is lost, run `reset-ui-passphrase` on the machine (`docker compose run --rm polito-cal-sync reset-ui-passphrase` in Docker): that needs access to the data folder and keeps all settings.
+
+## E_UI_LOGIN_THROTTLED
+
+**What happened:** too many wrong passphrases were typed, so logins are paused for a while.
+**Why:** repeated failures are slowed down on purpose: after two free typos the wait doubles each time, up to 15 minutes, and many failures from anywhere pause every login. While paused even the right passphrase is refused.
+**What to do:** wait the number of seconds named in the message (also in the `Retry-After` header), then type the passphrase carefully.
+
+## E_UI_SETUP_STATE
+
+**What happened:** the first-run step and the current state do not fit together.
+**Why:** either a passphrase is already set (the first-run step works only once), or none is set yet and a login was attempted.
+**What to do:** if one is set, log in. If none is set, open the UI on the machine that runs the service and choose a passphrase. To start over, run `reset-ui-passphrase`.
+
+## E_UI_PASSPHRASE_WEAK
+
+**What happened:** the new passphrase was not accepted.
+**Why:** it has fewer than 12 characters, more than 256, or fewer than 5 different characters. There are no other rules.
+**What to do:** use a longer one; several unrelated words work well and are easy to remember.
+
+## E_UI_NOT_FOUND
+
+**What happened:** there is nothing at the address that was requested.
+**Why:** the path is not part of the web UI API.
+**What to do:** check the address against `docs/UI.md`.

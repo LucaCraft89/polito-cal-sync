@@ -17,6 +17,7 @@
     "verify-google": "tsx src/main.ts verify-google",
     "serve": "tsx src/main.ts serve",
     "doctor": "tsx src/main.ts doctor",
+    "reset-ui-passphrase": "tsx src/main.ts reset-ui-passphrase",
     "typecheck": "tsc --noEmit",
     "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js .",
     "format": "prettier --write .",

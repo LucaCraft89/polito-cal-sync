@@ -38,6 +38,17 @@ export const ERROR_CODES = [
   'E_POLITO_API_UNEXPECTED_DATA',
   'E_POLITO_LOGIN_EXTRA_STEP',
   'E_POLITO_LOGIN_BLOCKED',
+  'E_SETTINGS_FILE_INVALID',
+  'E_SETTING_INVALID',
+  'E_SETTING_LOCKED',
+  'E_UI_HOST_REFUSED',
+  'E_UI_REQUEST_REFUSED',
+  'E_UI_AUTH_REQUIRED',
+  'E_UI_LOGIN_FAILED',
+  'E_UI_LOGIN_THROTTLED',
+  'E_UI_SETUP_STATE',
+  'E_UI_PASSPHRASE_WEAK',
+  'E_UI_NOT_FOUND',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -50,6 +61,8 @@ export interface UserErrorInit {
   why: string;
   /** What the user should do next. */
   action: string;
+  /** Optional HTTP status for the web API. */
+  status?: number;
   /** Underlying error; only ever written to debug logs, never shown. */
   cause?: unknown;
 }
@@ -60,6 +73,8 @@ export class UserError extends Error {
   readonly what: string;
   readonly why: string;
   readonly action: string;
+  /** HTTP status when the error is answered by the web API (otherwise the API picks one from the code). */
+  readonly status: number | undefined;
 
   constructor(init: UserErrorInit) {
     super(`${init.code}: ${init.what}`, init.cause === undefined ? {} : { cause: init.cause });
@@ -68,6 +83,7 @@ export class UserError extends Error {
     this.what = init.what;
     this.why = init.why;
     this.action = init.action;
+    this.status = init.status;
   }
 
   /** Link target inside the repository (GitHub renders `## E_X` headings as `#e_x`). */
