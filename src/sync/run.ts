@@ -38,6 +38,8 @@ export interface RunOutput {
   sourceErrors: { source: string; error: UserError }[];
   /** Hints from sources (not errors), shown under "Sources". */
   sourceNotes: string[];
+  /** `polito:<course id>` -> course name (empty when the portal is off or failed). */
+  courseNames: ReadonlyMap<string, string>;
 }
 
 /** The sources switched on by the configuration: the ICS feeds and, if enabled, the Polito portal. */
@@ -175,6 +177,7 @@ export async function runConfiguredSync(
       feeds: ics?.lastReport ?? [],
       sourceErrors,
       sourceNotes: polito?.notes ?? [],
+      courseNames: polito?.courseNames ?? new Map(),
     };
   } finally {
     state?.close();

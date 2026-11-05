@@ -72,6 +72,43 @@ describe('Moodle labelling', () => {
   });
 });
 
+describe('Moodle feed errors (decision 022)', () => {
+  const failing = (url: string, status: number, body = '') =>
+    new IcsSource({
+      urls: [url],
+      dataDir: mkdtempSync(join(tmpdir(), 'pcs-moodle-')),
+      tz: 'Europe/Rome',
+      moodleHost: 'moodle.example.test',
+      now: () => new Date('2026-11-04T10:00:00Z'),
+      pauseBetweenFeedsMs: 0,
+      fetchOptions: { fetchImpl: () => Promise.resolve(new Response(body, { status })) },
+    });
+
+  it('a refused Moodle feed says how to export the link again, without the URL', async () => {
+    const s = failing(MOODLE_FEED, 403);
+    const r = await s.fetch();
+    expect(r.complete).toBe(false);
+    const err = s.lastReport[0]?.error;
+    expect(err?.code).toBe('E_ICS_FEED_REJECTED');
+    expect(err?.action).toContain('Import or export calendars');
+    expect(err?.action).toContain('Nothing was deleted');
+    expect(JSON.stringify([err?.what, err?.why, err?.action])).not.toContain('SECRETSECRET');
+  });
+
+  it('a Moodle login page instead of a feed gets the same hint', async () => {
+    const s = failing(MOODLE_FEED, 200, '<html>login</html>');
+    await s.fetch();
+    expect(s.lastReport[0]?.error?.code).toBe('E_ICS_FEED_INVALID');
+    expect(s.lastReport[0]?.error?.action).toContain('Import or export calendars');
+  });
+
+  it('a feed on another host keeps the generic text', async () => {
+    const s = failing(OTHER_FEED, 403);
+    await s.fetch();
+    expect(s.lastReport[0]?.error?.action).not.toContain('Moodle');
+  });
+});
+
 describe('--details', () => {
   it('prints course, place and note under created events, only when asked', () => {
     const e = toCanonical({
@@ -94,5 +131,26 @@ describe('--details', () => {
     expect(formatReport(report, base)).not.toContain('Squad 2');
     const detailed = formatReport(report, { ...base, details: true });
     expect(detailed).toContain('course polito:5001 · at Room 9 · note: Squad 2');
+  });
+
+  it('shows the course name next to the key when the portal gave one', () => {
+    const e = toCanonical({
+      source: 'polito',
+      sourceId: 'lecture:2',
+      kind: 'lecture',
+      title: 'Invented',
+      start: '2026-11-10T09:00:00Z',
+      course: 'polito:5001',
+    });
+    const plan = diff([{ source: 'polito', complete: true, events: [e] }], [], 0.3);
+    const report = { status: 'dry-run' as const, plan, options: { dryRun: true, force: false } };
+    const text = formatReport(report, {
+      tz: 'Europe/Rome',
+      calendarId: 'c',
+      results: [{ source: 'polito', complete: true, events: [e] }],
+      details: true,
+      courseNames: new Map([['polito:5001', 'Invented course']]),
+    });
+    expect(text).toContain('course Invented course (polito:5001)');
   });
 });

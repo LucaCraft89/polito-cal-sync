@@ -54,6 +54,25 @@ function asMoodle(e: CanonicalEvent): CanonicalEvent {
   });
 }
 
+/** Codes whose usual cure, for a Moodle feed, is to generate the export URL again (decision 022). */
+const MOODLE_REGENERATE_CODES = new Set(['E_ICS_FEED_REJECTED', 'E_ICS_FEED_INVALID']);
+
+/**
+ * Adds the Moodle-specific cure to a refused or unreadable feed. The menu names are those of stock Moodle
+ * (UNVERIFIED for moodle.polito.it: what Moodle really answers to a stale token has not been observed),
+ * so the sentence says "usually" and gives the Italian label too.
+ */
+function withMoodleHint(err: UserError): UserError {
+  if (!MOODLE_REGENERATE_CODES.has(err.code)) return err;
+  return new UserError({
+    code: err.code,
+    what: err.what,
+    why: `${err.why} For a Moodle feed this usually means the export link was regenerated or its token expired.`,
+    action: `In Moodle open the Calendar, choose "Import or export calendars" ("Importa o esporta calendari"), export again and copy the new URL into SOURCE_POLITO_ICS_URLS. ${err.action}`,
+    cause: err,
+  });
+}
+
 /**
  * Reads the configured calendar feeds one by one. The result is `complete` ONLY if every feed
  * was downloaded (or confirmed unchanged) and every event in it was understood; otherwise the
@@ -78,6 +97,7 @@ export class IcsSource implements Source {
     for (const [i, url] of this.o.urls.entries()) {
       if (i > 0) await sleep(this.o.pauseBetweenFeedsMs ?? 1000);
       const label = feedLabel(i, url);
+      const isMoodle = this.o.moodleHost !== undefined && hostOf(url) === this.o.moodleHost;
       try {
         const feed = await fetchFeed(url, label, cache, this.o.fetchOptions);
         let parsed;
@@ -98,7 +118,6 @@ export class IcsSource implements Source {
           });
         }
         feed.commit();
-        const isMoodle = this.o.moodleHost !== undefined && hostOf(url) === this.o.moodleHost;
         if (isMoodle) parsed.events = parsed.events.map(asMoodle);
         for (const e of parsed.events) if (!events.has(e.sourceId)) events.set(e.sourceId, e);
         const report: FeedReport = {
@@ -125,7 +144,7 @@ export class IcsSource implements Source {
           events: 0,
           cancelled: 0,
           issues: [],
-          error: toUserError(err),
+          error: isMoodle ? withMoodleHint(toUserError(err)) : toUserError(err),
         });
       }
     }

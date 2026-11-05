@@ -136,6 +136,7 @@ async function syncCommand(
         calendarId: out.calendarId,
         results: out.results,
         details: values.details === true,
+        courseNames: out.courseNames,
         sourceNotes: [
           ...incompleteNotes(out.feeds),
           ...out.sourceErrors.map((e) => `${e.source}: ${e.error.code}`),

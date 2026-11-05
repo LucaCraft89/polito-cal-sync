@@ -44,9 +44,10 @@ function describeCanonical(e: CanonicalEvent, tz: string): string {
 }
 
 /** Extra line under an event (--details): where and what, so look-alike events can be told apart. */
-function describeDetails(e: CanonicalEvent): string {
+function describeDetails(e: CanonicalEvent, courseNames?: ReadonlyMap<string, string>): string {
+  const name = e.course ? courseNames?.get(e.course) : undefined;
   const bits = [
-    e.course ? `course ${e.course}` : undefined,
+    e.course ? (name ? `course ${name} (${e.course})` : `course ${e.course}`) : undefined,
     e.location ? `at ${e.location}` : undefined,
     e.description ? `note: ${e.description.replace(/\s+/g, ' ').slice(0, 120)}` : undefined,
   ].filter(Boolean);
@@ -70,6 +71,8 @@ export interface FormatContext {
   sourceNotes?: readonly string[];
   /** Print course, place and note under each created/updated event (--details). */
   details?: boolean;
+  /** `polito:<course id>` -> course name, from the portal's course list; shown next to the key with --details. */
+  courseNames?: ReadonlyMap<string, string>;
 }
 
 /** Human-readable plan / result. Contains event titles: print it to the user's terminal only, never to logs. */
@@ -99,7 +102,7 @@ export function formatReport(report: SyncReport, ctx: FormatContext): string {
   ] as const) {
     for (const c of list) {
       lines.push(`  ${sign} ${word.padEnd(7)} ${describeCanonical(c.event, ctx.tz)}`);
-      if (ctx.details) lines.push(describeDetails(c.event));
+      if (ctx.details) lines.push(describeDetails(c.event, ctx.courseNames));
     }
   }
   for (const d of plan.deletes) lines.push(`  - delete  ${describeManaged(d.remote, ctx.tz)}`);
