@@ -30,6 +30,7 @@ import { createLogger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
 import { PassphraseStore } from '../web/auth.js';
 import { createWebApp } from '../web/app.js';
+import { formatChecks, runDoctor } from '../doctor/index.js';
 import { loadFixture } from './fixture.js';
 import type { EventsApi } from '../google/types.js';
 import type { FeedReport } from '../sources/ics/index.js';
@@ -81,7 +82,8 @@ Commands
   reset-ui-passphrase
                   Forget the web UI passphrase (needs access to the data folder), so the
                   first-run page asks for a new one. Settings and logins are kept.
-  doctor          Check the setup (not available yet: M5).
+  doctor          Check the setup: folder, clock, Google, every source, last sync (read-only).
+                  --local skips everything that contacts another server.
 
 Exit codes: 0 ok, 1 error, 2 refused / partial / failed run, or a dry run that would be refused.`;
 
@@ -368,6 +370,25 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   return 0;
 }
 
+async function doctorCommand(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  io: CliIo,
+  deps: CliDeps,
+): Promise<number> {
+  const values = parseOptions('doctor', args, { local: { type: 'boolean', default: false } });
+  const config = loadConfigFromDisk(env);
+  const logger = createLogger(env['LOG_LEVEL'] ? config.logLevel : 'warn', io.logStream);
+  const checks = await runDoctor({
+    config,
+    logger,
+    local: values.local === true,
+    deps: { ...deps, ...(deps.oauth?.calendars ? { calendars: deps.oauth.calendars } : {}) },
+  });
+  io.out(formatChecks(checks));
+  return checks.some((c) => c.status === 'fail') ? 1 : 0;
+}
+
 function resetUiPassphrase(env: NodeJS.ProcessEnv, io: CliIo): number {
   const config = loadConfigFromDisk(env);
   const done = new PassphraseStore(config.dataDir).reset();
@@ -431,12 +452,7 @@ export async function runCli(
       case 'reset-ui-passphrase':
         return resetUiPassphrase(env, io);
       case 'doctor':
-        throw new UserError({
-          code: 'E_NOT_IMPLEMENTED',
-          what: `"${command}" is not available in this build yet.`,
-          why: 'The project is built in milestones (docs/PLAN.md): doctor arrives with M5.',
-          action: 'Nothing is broken. "sync --dry-run" shows what a run would do.',
-        });
+        return await doctorCommand(rest, env, io, deps);
       default:
         throw usageError(`Unknown command "${command}".`);
     }

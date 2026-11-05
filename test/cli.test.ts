@@ -101,7 +101,6 @@ describe('cli: errors are coded, explained, and free of stack traces', () => {
     [['auth', 'google'], 'E_GOOGLE_CLIENT_MISSING'],
     [['auth', 'nope'], 'E_USAGE'],
     [['verify-google'], 'E_GOOGLE_CLIENT_MISSING'],
-    [['doctor'], 'E_NOT_IMPLEMENTED'],
     [['sync', '--fixture', '/nonexistent/dir'], 'E_FIXTURE_INVALID'],
     [['sync', '--dry-run', '--fixture', M1], 'E_CONFIG_INVALID', { TZ: 'Not/AZone' }],
   ];

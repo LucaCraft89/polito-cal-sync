@@ -15,55 +15,75 @@ async function status() {
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
 
-function checklist(s, g) {
+/** The setup steps in the order a new person does them (docs/UI.md section 5). */
+function checklist(s, g, extra) {
   const polito = s['polito.enabled']?.value === true;
   const feeds = s.icsUrls?.set ? s.icsUrls.value.length : 0;
-  const items = [];
-  items.push({
-    ok: feeds > 0 || polito,
-    title: 'A source is switched on',
-    text:
-      feeds > 0 || polito
-        ? `${feeds} calendar feed(s)${polito ? ', Polito portal' : ''}`
-        : 'Add a calendar feed or switch on the Polito portal.',
-    to: '#/sources',
-  });
+  const client = s['google.clientId']?.set && s['google.clientSecret']?.set;
+  const items = [
+    {
+      ok: !!client,
+      title: 'Google client saved',
+      text: client
+        ? 'The client id and secret are set.'
+        : 'Create the Google client (docs/SETUP.md), then enter its id and secret under Settings.',
+      to: '#/settings',
+    },
+    {
+      ok: !!g?.connected,
+      title: 'Google account connected',
+      text: g?.connected
+        ? `Signed in${g.account ? ` as ${g.account}` : ''}.`
+        : 'Press Connect Google under Settings and allow calendar access.',
+      to: '#/settings',
+    },
+    {
+      ok: !!g?.calendar,
+      title: 'Dedicated calendar chosen',
+      text: g?.calendar
+        ? `Events go to ${g.calendar.name ? `"${g.calendar.name}"` : 'the calendar set by the environment'}.`
+        : 'Create or pick the calendar under Settings. It is never your main calendar.',
+      to: '#/settings',
+    },
+    {
+      ok: feeds > 0 || polito,
+      title: 'A source is switched on',
+      text:
+        feeds > 0 || polito
+          ? `${feeds} calendar feed(s)${polito ? ', Polito portal' : ''}`
+          : 'Add a calendar feed or switch on the Polito portal under Sources, and press Test.',
+      to: '#/sources',
+    },
+  ];
   if (polito) {
     const done = s['polito.username']?.set && s['polito.password']?.set;
     items.push({
       ok: !!done,
       title: 'Polito login saved',
       text: done
-        ? 'Username and password are set.'
+        ? 'Username and password are set. Press Test login on the Sources page to check them.'
         : 'The portal is on, but the username or password is missing.',
       to: '#/sources',
     });
   }
-  const client = s['google.clientId']?.set && s['google.clientSecret']?.set;
-  items.push({
-    ok: !!client,
-    title: 'Google client saved',
-    text: client
-      ? 'The client id and secret are set.'
-      : 'Enter the Google client id and secret under Settings.',
-    to: '#/settings',
-  });
-  items.push({
-    ok: !!g?.connected,
-    title: 'Google account connected',
-    text: g?.connected
-      ? `Signed in${g.account ? ` as ${g.account}` : ''}.`
-      : 'Press Connect Google under Settings.',
-    to: '#/settings',
-  });
-  items.push({
-    ok: !!g?.calendar,
-    title: 'Dedicated calendar chosen',
-    text: g?.calendar
-      ? `Events go to ${g.calendar.name ? `"${g.calendar.name}"` : 'the calendar set by the environment'}.`
-      : 'Create or pick the calendar under Settings. It is never your main calendar.',
-    to: '#/settings',
-  });
+  items.push(
+    {
+      ok: extra.previewed,
+      title: 'First preview',
+      text: extra.previewed
+        ? 'You have looked at what a sync would do.'
+        : 'Press Preview now to see what would be written. Nothing is written yet.',
+      to: '#/preview',
+    },
+    {
+      ok: extra.synced,
+      title: 'First sync',
+      text: extra.synced
+        ? 'The calendar has been written. The scheduled sync keeps it up to date.'
+        : 'On the Preview page, read the result and press Sync now.',
+      to: '#/preview',
+    },
+  );
   return items;
 }
 
@@ -76,13 +96,17 @@ export async function renderOverview() {
   const body = h('div', { class: 'cards' }, loading('Loading…'));
   page.append(body);
   try {
-    const [{ settings }, st, g] = await Promise.all([
+    const [{ settings }, st, g, pv, hist] = await Promise.all([
       api('GET', '/api/settings'),
       status(),
       api('GET', '/api/google').catch(() => undefined),
+      api('GET', '/api/preview').catch(() => undefined),
+      api('GET', '/api/history?limit=1').catch(() => undefined),
     ]);
     const s = byKey(settings);
-    const items = checklist(s, g);
+    const synced = (hist?.runs?.length ?? 0) > 0;
+    const items = checklist(s, g, { previewed: !!pv?.preview || synced, synced });
+    const next = items.find((it) => !it.ok);
     const cards = [];
 
     const run = h(
@@ -141,8 +165,26 @@ export async function renderOverview() {
       { class: 'card', 'aria-labelledby': 'h-setup' },
       h('h2', { id: 'h-setup', text: 'Setup' }),
     );
-    const list = h('ul', { class: 'list' });
-    for (const it of items) {
+    if (next) {
+      setup.append(
+        banner(
+          'info',
+          `Next: ${next.title.toLowerCase()}`,
+          next.text,
+          h('a', { class: 'btn btn-filled', href: next.to }, 'Go there'),
+        ),
+      );
+    } else {
+      setup.append(
+        banner(
+          'ok',
+          'Everything is set up',
+          'The calendar is kept up to date by the scheduled sync.',
+        ),
+      );
+    }
+    const list = h('ol', { class: 'list' });
+    for (const [n, it] of items.entries()) {
       list.append(
         h(
           'li',
@@ -151,7 +193,7 @@ export async function renderOverview() {
           h(
             'div',
             { class: 'grow' },
-            h('span', { class: 't-label', text: it.title }),
+            h('span', { class: 't-label', text: `${n + 1}. ${it.title}` }),
             h('span', { class: 'muted t-small', text: it.text }),
           ),
           h('a', { class: 'btn btn-text', href: it.to }, 'Open'),

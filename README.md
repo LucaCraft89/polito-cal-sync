@@ -4,20 +4,25 @@ Self-hosted service that syncs a Politecnico di Torino student's schedule, exams
 
 > **Unofficial.** Not affiliated with or endorsed by Politecnico di Torino. Personal, self-hosted use only.
 
-## Status: M3 (ICS source, Google login, serve loop; Polito portal source, opt-in)
+## Status: M5 (web UI, `doctor`) — built and tested against fakes, not yet run against a real Google account
 
-It can sync an ICS calendar feed into a **dedicated Google calendar**. M2 is built and unit-tested, but **has not yet run against a real Google account or a real Polito feed** (nobody with credentials has run it yet). The steps that prove it are in [`docs/M2-RUNBOOK.md`](docs/M2-RUNBOOK.md). The Moodle source, the setup wizard and `doctor` do not exist yet (see `docs/PLAN.md`). A Moodle calendar export URL already works as an ICS feed.
+A local web page configures everything and runs it: Google connect and calendar picker, calendar feeds and the Polito portal (each with a **Test** button), squads, **Preview** (a dry run that writes nothing), **Sync now** (with a fresh-preview rule, a one-tap confirmation, a typed confirmation beyond the deletion limit, the run lock and a 15-minute limit), Courses and History (with the paused-login state), a first-run setup checklist, and `doctor`. Start with [`docs/SETUP.md`](docs/SETUP.md). Design records: `docs/decisions/` (023 to 031); the UI spec is `docs/UI.md`.
 
-What exists and is tested:
+**What is tested, and how.** `pnpm check` (typecheck, lint, format, secret scan, ~390 tests including real-browser tests with axe accessibility and layout checks at four phone-to-desktop sizes). Google is always replaced by an in-memory fake in tests: **nothing has been run against a real Google account**, not the sign-in, not a sync, not Sync now. The Polito portal login was run live read-only by the author on one account (decisions 018, 026, 028): no multi-factor step, every part understood. Moodle is only the calendar export link (an ICS feed); a richer route is being investigated (decision 031).
 
-- **ICS source** (`src/sources/ics/`, own parser): feed URL list, conditional GET (ETag/Last-Modified), honest User-Agent, backoff on 429/5xx, time zones, floating/UTC/all-day, recurrences with exceptions and overrides, cancelled events. A feed that fails makes the result incomplete, so nothing is deleted.
-- **Google login** (`auth google`, loopback flow), a dedicated calendar (never the main one), and a client that only creates, updates and deletes events carrying our marker (`extendedProperties.private.polito_cal_sync=1`).
-- **`sync`** (`--dry-run` shows the plan), a deletion safety threshold (refuse a run that would delete more than 30% of our events), sqlite history, **`serve`** (scheduled, no overlapping runs, graceful stop, heartbeat, local status page), `verify-google`.
-- Coded, explained errors (`docs/ERRORS.md`), log redaction (feed URLs can hold a secret token and are never logged), secret scan in CI.
+What exists:
 
-**Polito portal source (M3, opt-in, off by default).** With `SOURCE_POLITO_PORTAL_ENABLED=true` plus `POLITO_USERNAME` and `POLITO_PASSWORD` in `.env`, the service logs in to the student portal the way a browser does (university single sign-on), reads your lectures, exam calls (booked ones as exams), booking slots and academic-calendar dates from one JSON document, and writes them next to your ICS events. **Read this first:** it uses your real university password, stored in `.env` on your machine; it is not an advertised API and can break when the portal changes; a login from a server can be answered with a multi-factor step, in which case the source stops (`E_POLITO_LOGIN_EXTRA_STEP`) and the ICS source is unaffected; if the university refuses the password, further attempts are paused until you change it (so an hourly retry never locks your account). It never deletes ICS events and never makes an incomplete result look complete. It has been proven on one account's real login (decision 018); its mapper was written from that account's sanitized sample, so other accounts may show differences. Steps: [`docs/M3-RUNBOOK.md`](docs/M3-RUNBOOK.md).
+- **ICS source** (own parser): feed list, conditional GET, honest User-Agent, backoff, time zones, recurrences, cancelled events. A feed that fails makes the result incomplete, so nothing is deleted.
+- **Google**: loopback sign-in with PKCE, a dedicated calendar (never the main one), a client that only creates, updates and deletes events carrying our marker (`extendedProperties.private.polito_cal_sync=1`).
+- **Safety**: deletion limit (refuse a run that would remove more than 30% of our events), run lock, sqlite history, rate limits on everything that contacts the university or Google, secrets redacted from logs and never sent back to the browser.
+- **`sync`**, **`serve`** (scheduled, graceful stop, heartbeat), **`doctor`**, `verify-google`, coded and explained errors (`docs/ERRORS.md`).
+- **Web UI**: plain HTML and scripts (no framework, no third-party request), our own approximation of Material 3 design tokens, WCAG 2.2 AA target.
 
-What is simulated: `--fixture DIR` (developer only) uses an in-memory calendar instead of Google and says so in its output; the ICS parser it can use is the real one. Everything else talks to the real services.
+**Polito portal source (opt-in, off by default).** With the portal switched on and your username and password saved, the service logs in the way a browser does (university single sign-on), reads your lectures, exam calls (booked ones as exams), booking slots and academic-calendar dates, and writes them next to your feed events. **Read this first:** it uses your real university password (stored in a file only you can read, not encrypted); it is not an advertised API and can break when the portal changes; a login from a server can be answered with a multi-factor step, in which case the source stops (`E_POLITO_LOGIN_EXTRA_STEP`) and the feeds are unaffected; if the university refuses the password, further attempts are paused until you change it. It never deletes feed events and never makes an incomplete result look complete.
+
+**Not built:** one calendar per course (decision 013), a Moodle web-service source, screenshots. Everything else in the plan exists.
+
+What is simulated: `--fixture DIR` (developer only) uses an in-memory calendar instead of Google and says so in its output; the ICS parser it can use is the real one. Everything else in the program talks to the real services (it is the tests that use fakes).
 
 ## Try it without any account
 
@@ -32,8 +37,8 @@ pnpm check                                            # typecheck + lint + forma
 
 ## Run it for real
 
-Follow [`docs/M2-RUNBOOK.md`](docs/M2-RUNBOOK.md): create a Google OAuth client, put your feed URL in `.env`, `pnpm auth google`, `pnpm sync --dry-run`, `pnpm sync`, then `docker compose up -d`.
+Follow [`docs/SETUP.md`](docs/SETUP.md): start it, open http://localhost:8787, and the Overview page lists the steps. The command-line route is still in [`docs/M2-RUNBOOK.md`](docs/M2-RUNBOOK.md) (`pnpm auth google`, `pnpm sync --dry-run`, `pnpm sync`).
 
-Note: `pnpm doctor` is a pnpm built-in; our command is `pnpm run doctor` (not available until M5).
+Note: `pnpm doctor` is a pnpm built-in; our command is `pnpm run doctor`.
 
 License: MIT.
