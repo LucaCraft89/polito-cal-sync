@@ -10,9 +10,17 @@ export interface CatalogCourse {
   labels: string[];
 }
 
+export interface MoodleCatalogCourse {
+  /** Moodle's course id (the key of the exclusion setting). */
+  courseId: string;
+  name: string;
+}
+
 export interface Catalog {
   updatedAt: string;
   courses: CatalogCourse[];
+  /** The Moodle courses of the last Moodle read (all of them, also the excluded ones). */
+  moodle?: { updatedAt: string; courses: MoodleCatalogCourse[] };
 }
 
 /**
@@ -41,10 +49,44 @@ export class CourseCatalog {
             ]
           : [],
       );
-      return { updatedAt: v.updatedAt, courses };
+      const m = v.moodle;
+      const moodleCourses =
+        m && Array.isArray(m.courses) && typeof m.updatedAt === 'string'
+          ? m.courses.flatMap((c): MoodleCatalogCourse[] =>
+              c && typeof c.courseId === 'string' && typeof c.name === 'string'
+                ? [{ courseId: c.courseId, name: c.name }]
+                : [],
+            )
+          : undefined;
+      return {
+        updatedAt: v.updatedAt,
+        courses,
+        ...(m && moodleCourses
+          ? { moodle: { updatedAt: m.updatedAt, courses: moodleCourses } }
+          : {}),
+      };
     } catch {
       return undefined;
     }
+  }
+
+  /** Remembers the Moodle courses (merged into the same file; an empty read never overwrites). */
+  writeMoodle(names: ReadonlyMap<string, string>, at: Date): void {
+    const courses: MoodleCatalogCourse[] = [];
+    for (const [key, name] of names) {
+      if (key.startsWith('moodle:')) courses.push({ courseId: key.slice('moodle:'.length), name });
+    }
+    if (courses.length === 0) return;
+    courses.sort((a, b) => a.name.localeCompare(b.name));
+    const before = this.read();
+    writePrivateFile(
+      this.path,
+      JSON.stringify({
+        updatedAt: before?.updatedAt ?? at.toISOString(),
+        courses: before?.courses ?? [],
+        moodle: { updatedAt: at.toISOString(), courses },
+      }),
+    );
   }
 
   write(
@@ -60,6 +102,14 @@ export class CourseCatalog {
     }
     if (courses.length === 0) return;
     courses.sort((a, b) => a.name.localeCompare(b.name));
-    writePrivateFile(this.path, JSON.stringify({ updatedAt: at.toISOString(), courses }));
+    const before = this.read();
+    writePrivateFile(
+      this.path,
+      JSON.stringify({
+        updatedAt: at.toISOString(),
+        courses,
+        ...(before?.moodle ? { moodle: before.moodle } : {}),
+      }),
+    );
   }
 }

@@ -140,7 +140,16 @@ export interface CourseView {
   chosen: string[];
 }
 
+export interface MoodleCourseView {
+  courseId: string;
+  name: string;
+  /** The events of this course are left out of the sync. */
+  excluded: boolean;
+}
+
 export interface CoursesView {
+  /** The Moodle courses of the last Moodle read, with whether each is left out. */
+  moodleCourses?: MoodleCourseView[];
   /** When the portal was last read for this list; absent if it never was. */
   updatedAt?: string;
   courses: CourseView[];
@@ -154,8 +163,18 @@ export function coursesView(
   const config = loadConfig({ ...env, DATA_DIR: dataDir }, settings.read());
   const catalog = new CourseCatalog(dataDir).read();
   if (!catalog) return { courses: [] };
+  const left = new Set(config.moodle.excludedCourses);
   return {
     updatedAt: catalog.updatedAt,
+    ...(catalog.moodle
+      ? {
+          moodleCourses: catalog.moodle.courses.map((c) => ({
+            courseId: c.courseId,
+            name: c.name,
+            excluded: left.has(c.courseId),
+          })),
+        }
+      : {}),
     courses: catalog.courses.map((c) => ({
       courseId: c.courseId,
       name: c.name,

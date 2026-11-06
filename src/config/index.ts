@@ -49,6 +49,24 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   GOOGLE_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   GOOGLE_CALENDAR_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  GOOGLE_MOODLE_CALENDAR_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  CALENDAR_SPLIT_MOODLE: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(['true', 'false'], 'must be true or false')
+      .default('false')
+      .transform((v) => v === 'true'),
+  ),
+  MOODLE_EXCLUDED_COURSES: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .regex(
+        /^\s*\d+(?:\s*,\s*\d+)*\s*$/,
+        'must be Moodle course ids separated by commas, e.g. 4,17',
+      )
+      .optional(),
+  ),
   SOURCE_POLITO_ICS_URLS: z.preprocess(
     emptyToUndefined,
     z
@@ -193,6 +211,8 @@ export interface Config {
     clientId?: string;
     clientSecret?: string;
     calendarId?: string;
+    /** The calendar for Moodle events when they are split off. */
+    moodleCalendarId?: string;
     /** Where the "Connect Google" button of the UI listens for Google's redirect (0 = a free port). */
     authPort: number;
     authBind: string;
@@ -212,7 +232,12 @@ export interface Config {
   moodleHost: string;
   moodleBaseUrl: string;
   /** Live Moodle events through the mobile web service, with the same university login as the portal. */
-  moodle: { enabled: boolean };
+  moodle: {
+    enabled: boolean;
+    /** Moodle course ids whose events are left out. */ excludedCourses: string[];
+  };
+  /** Keep Moodle events in a second Google calendar of their own (the [Moodle] label stays in the title). */
+  calendars: { splitMoodle: boolean };
   /** Local status page: port 0 turns it off. */
   status: { port: number; bind: string };
   /**
@@ -280,6 +305,8 @@ export function loadConfig(
   if (v.GOOGLE_CLIENT_ID !== undefined) google.clientId = v.GOOGLE_CLIENT_ID;
   if (v.GOOGLE_CLIENT_SECRET !== undefined) google.clientSecret = v.GOOGLE_CLIENT_SECRET;
   if (v.GOOGLE_CALENDAR_ID !== undefined) google.calendarId = v.GOOGLE_CALENDAR_ID;
+  if (v.GOOGLE_MOODLE_CALENDAR_ID !== undefined)
+    google.moodleCalendarId = v.GOOGLE_MOODLE_CALENDAR_ID;
   return {
     tz: v.TZ,
     dataDir: resolve(v.DATA_DIR),
@@ -291,7 +318,11 @@ export function loadConfig(
     icsUrls: splitList(v.SOURCE_POLITO_ICS_URLS ?? ''),
     moodleHost: new URL(v.MOODLE_BASE_URL).hostname,
     moodleBaseUrl: v.MOODLE_BASE_URL,
-    moodle: { enabled: v.SOURCE_MOODLE_ENABLED },
+    moodle: {
+      enabled: v.SOURCE_MOODLE_ENABLED,
+      excludedCourses: splitList(v.MOODLE_EXCLUDED_COURSES ?? ''),
+    },
+    calendars: { splitMoodle: v.CALENDAR_SPLIT_MOODLE },
     polito: {
       enabled: v.SOURCE_POLITO_PORTAL_ENABLED,
       examCalls: v.POLITO_EXAM_CALLS,

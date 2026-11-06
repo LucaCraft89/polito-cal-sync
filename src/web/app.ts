@@ -102,8 +102,9 @@ const refused = (what: string, why: string, action: string): UserError =>
 
 const passphraseBody = z.object({ passphrase: z.string().max(1000) }).strict();
 const changeBody = z.object({ current: z.string().max(1000), next: z.string().max(1000) }).strict();
+const slotField = z.enum(['polito', 'moodle']).optional();
 const calendarBody = z.union([
-  z.object({ id: z.string().min(1).max(300) }).strict(),
+  z.object({ id: z.string().min(1).max(300), slot: slotField }).strict(),
   z
     .object({
       create: z
@@ -118,6 +119,7 @@ const calendarBody = z.union([
             .optional(),
         })
         .strict(),
+      slot: slotField,
     })
     .strict(),
 ]);
@@ -497,7 +499,9 @@ export function createWebApp(o: WebAppOptions): WebApp {
       json: true,
       run: async (c) => {
         parseBody(z.object({}).strict(), c.body);
-        return { status: 200, body: await checks.testMoodle() };
+        const result = await checks.testMoodle();
+        bus.emit('preview'); // the Moodle course list may have changed
+        return { status: 200, body: result };
       },
     },
     {
@@ -575,7 +579,12 @@ export function createWebApp(o: WebAppOptions): WebApp {
       path: '/api/google/calendars',
       auth: true,
       json: false,
-      run: async () => ({ status: 200, body: await googleService.listCalendars() }),
+      run: async (c) => ({
+        status: 200,
+        body: await googleService.listCalendars(
+          c.query.get('slot') === 'moodle' ? 'moodle' : 'polito',
+        ),
+      }),
     },
     {
       method: 'POST',

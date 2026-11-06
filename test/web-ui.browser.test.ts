@@ -10,6 +10,15 @@ import { SettingsStore } from '../src/settings/store.js';
 import { startHarness, PASS, type Harness } from './support/web.js';
 import { FEED, ics, previewWorld } from './support/preview-world.js';
 import { FakeCalendars, fakeFlow } from './support/fake-calendars.js';
+import { CalendarChoice } from '../src/google/calendars.js';
+import { TokenStore } from '../src/google/oauth.js';
+import {
+  course as moodleCourse,
+  event as moodleEvent,
+  MOODLE,
+  moodleOpts,
+  moodleWorld,
+} from './support/moodle-world.js';
 import { LoginLatch } from '../src/sources/polito/portal/latch.js';
 import { StateStore } from '../src/sync/state.js';
 import { opts, PASS as PORTAL_PASS, USER, world as portalWorld } from './support/portal-world.js';
@@ -698,7 +707,7 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       await page.getByRole('button', { name: 'Pick one of my calendars' }).click();
       await page.getByRole('radio', { name: XSS_TITLE }).waitFor();
       expect(await page.locator('main img').count()).toBe(0);
-      expect(await page.locator('input[name=cal]').count()).toBe(1);
+      expect(await page.locator('input[name^="cal-"]').count()).toBe(1);
       expect(
         await page.evaluate(() => (window as unknown as { __xss?: number }).__xss),
       ).toBeUndefined();
@@ -1068,6 +1077,90 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       expect(w.problems).toEqual([]);
     } finally {
       await h9.close();
+    }
+  });
+
+  it('Moodle: leave a course out, and keep Moodle events in a calendar of their own', async () => {
+    const m = moodleWorld({
+      courses: [moodleCourse(11, 'Invented Chemistry'), moodleCourse(12, 'Mathematical Lab')],
+      events: [moodleEvent(1, { courseid: 11 }), moodleEvent(2, { courseid: 12 })],
+    });
+    const w0 = previewWorld();
+    w0.deps.politoPortal = moodleOpts(m.fetchImpl);
+    const calendars = new FakeCalendars();
+    calendars.add({ id: 'me@example.invalid', summary: 'me@example.invalid', primary: true });
+    calendars.add({ id: 'work', summary: 'Work' });
+    const h10 = await startHarness({
+      env: { TZ: 'Europe/Rome', MOODLE_BASE_URL: MOODLE },
+      app: { runDeps: w0.deps, google: { calendars } },
+    });
+    try {
+      new SettingsStore(h10.dataDir).apply(
+        {
+          set: { 'polito.username': USER, 'polito.password': PORTAL_PASS, 'moodle.enabled': true },
+        }, // secret-scan:ignore
+        {},
+      );
+      new TokenStore(h10.dataDir).write({ refresh_token: 'rt' });
+      new CalendarChoice(h10.dataDir).write('work', 'Work');
+      const { page, w } = await newPage({ width: 390, height: 844 });
+      const b10 = `http://localhost:${h10.port}`;
+      await page.goto(`${b10}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+
+      // Courses to include: listed after the first Moodle read, without a reload.
+      await page.goto(`${b10}/#/sources`);
+      await waitPage(page, 'Your Moodle courses appear here');
+      await page.getByRole('button', { name: 'Test Moodle' }).click();
+      await waitPage(page, 'Moodle works');
+      await page.getByRole('checkbox', { name: 'Mathematical Lab' }).waitFor();
+      expect(await page.getByRole('checkbox', { name: 'Mathematical Lab' }).isChecked()).toBe(true);
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.getByRole('checkbox', { name: 'Mathematical Lab' }).uncheck();
+      await page
+        .locator('form[aria-labelledby="h-moodle"]')
+        .getByRole('button', { name: 'Save' })
+        .click();
+      await page.locator('.snackbar').getByText('Saved').waitFor();
+      expect(new SettingsStore(h10.dataDir).read()['moodle.excludedCourses']).toEqual(['12']);
+      await waitPage(page, 'Mathematical Lab');
+      expect(await page.getByRole('checkbox', { name: 'Mathematical Lab' }).isChecked()).toBe(
+        false,
+      );
+
+      // Two calendars: switch on, then create the Moodle calendar.
+      await page.goto(`${b10}/#/settings`);
+      await waitPage(page, 'Keep Moodle events in their own calendar');
+      await page.getByLabel('Keep Moodle events in their own calendar').check({ force: true });
+      await page.getByRole('button', { name: 'Save' }).last().click();
+      await waitPage(page, 'Choose the Moodle calendar');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.getByRole('button', { name: 'Create the Moodle calendar' }).click();
+      await page.locator('.snackbar').getByText('Calendar ready').waitFor();
+      await page.locator('main dd', { hasText: 'Moodle (polito-cal-sync)' }).first().waitFor();
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await settle(page);
+      expect(await axeProblems(page)).toEqual([]);
+      await page.emulateMedia({ colorScheme: 'light' });
+      expect(new SettingsStore(h10.dataDir).read()['calendars.splitMoodle']).toBe(true);
+
+      await page.goto(`${b10}/#/overview`);
+      await waitPage(page, 'Moodle calendar chosen');
+      expect(
+        await page
+          .locator('.list-item', { hasText: 'Moodle calendar chosen' })
+          .getByText('Done')
+          .count(),
+      ).toBe(1);
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h10.close();
     }
   });
 });

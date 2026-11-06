@@ -5,8 +5,10 @@ import {
   assertDedicatedCalendar,
   CalendarChoice,
   createCalendarsApi,
+  MOODLE_CALENDAR_FILE,
   type CalendarsApi,
 } from '../google/calendars.js';
+import { moodleCalendarMissing } from '../google/runtime.js';
 import { authorizedClient, clientCredentials, TokenStore } from '../google/oauth.js';
 import { evaluateHealth, HeartbeatStore } from '../serve/heartbeat.js';
 import { IcsSource } from '../sources/ics/index.js';
@@ -209,10 +211,27 @@ async function googleCheck(o: DoctorOptions, net: boolean): Promise<Check> {
     if (!net) return skipped('google', label, 'login and calendar saved; not contacted (--local)');
     const admin = deps.calendars ?? createCalendarsApi(authorizedClient(creds, store));
     const entry = await assertDedicatedCalendar(admin, calendarId);
+    let extra = '';
+    if (config.calendars.splitMoodle) {
+      const moodleId =
+        config.google.moodleCalendarId ??
+        new CalendarChoice(config.dataDir, MOODLE_CALENDAR_FILE).read();
+      if (!moodleId) throw moodleCalendarMissing();
+      if (moodleId === calendarId) {
+        throw new UserError({
+          code: 'E_GOOGLE_CALENDARS_SAME',
+          what: 'The Polito calendar and the Moodle calendar are the same calendar.',
+          why: 'Keeping Moodle events apart needs two different calendars.',
+          action: 'Choose another calendar for Moodle under Settings, or switch the split off.',
+        });
+      }
+      const moodle = await assertDedicatedCalendar(admin, moodleId);
+      extra = ` and the Moodle calendar "${moodle.summary}"`;
+    }
     return ok(
       'google',
       label,
-      `signed in; the dedicated calendar "${entry.summary}" is reachable and writable`,
+      `signed in; the dedicated calendar "${entry.summary}"${extra} is reachable and writable`,
     );
   } catch (err) {
     return fail('google', label, err);
@@ -288,6 +307,7 @@ async function moodleCheck(o: DoctorOptions, net: boolean): Promise<Check> {
     username,
     password,
     baseUrl: config.moodleBaseUrl,
+    excludedCourses: config.moodle.excludedCourses,
     dataDir: config.dataDir,
     logger: o.logger,
     ...(deps.now ? { now: deps.now } : {}),

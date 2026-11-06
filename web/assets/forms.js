@@ -230,3 +230,56 @@ export function squadsField({ view, current, choices }) {
     );
   return { el, read, changed: () => norm(read()) !== norm(current) };
 }
+
+/**
+ * Moodle courses: tick the ones whose events you want in the calendar. Unticked ones are left out of the sync.
+ * `excluded` is the saved list; ids the last read did not show stay as they are.
+ */
+export function moodleCoursesField({ view, excluded, courses }) {
+  const el = h(
+    'div',
+    { class: 'stack-sm' },
+    h('span', { class: 'field-label', text: 'Courses to include' }),
+  );
+  const boxes = [];
+  if (courses.length === 0) {
+    el.append(
+      h('p', {
+        class: 'field-help',
+        text: 'Your Moodle courses appear here after the first read. Press Test Moodle below, then they are listed and you can leave some out.',
+      }),
+    );
+  } else {
+    const group = h(
+      'fieldset',
+      { class: 'check-group', disabled: view?.locked },
+      h('legend', { text: 'Events of unticked courses are not added to your calendar' }),
+    );
+    for (const c of courses) {
+      const input = h('input', { type: 'checkbox', value: c.courseId });
+      input.checked = !excluded.includes(c.courseId);
+      boxes.push(input);
+      group.append(h('label', { class: 'check-row' }, input, h('span', { text: c.name })));
+    }
+    el.append(
+      group,
+      h('p', {
+        class: 'field-help',
+        text: 'For example a lab you are enrolled in by default but never attend. Events already in your calendar for a course you untick are removed at the next sync (within the deletion limit).',
+      }),
+    );
+  }
+  el.append(lockedNote(view));
+  const shown = new Set(courses.map((c) => c.courseId));
+  const read = () => [
+    ...excluded.filter((id) => !shown.has(id)),
+    ...boxes.filter((b) => !b.checked).map((b) => b.value),
+  ];
+  const norm = (l) => JSON.stringify([...l].sort());
+  return {
+    el,
+    read,
+    changed: () => norm(read()) !== norm(excluded),
+    ids: courses.map((c) => c.courseId).join(','),
+  };
+}

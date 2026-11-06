@@ -20,7 +20,7 @@ What exists:
 
 **Polito portal source (opt-in, off by default).** With the portal switched on and your username and password saved, the service logs in the way a browser does (university single sign-on), reads your lectures, exam calls (booked ones as exams), booking slots and academic-calendar dates, and writes them next to your feed events. **Read this first:** it uses your real university password (stored in a file only you can read, not encrypted); it is not an advertised API and can break when the portal changes; a login from a server can be answered with a multi-factor step, in which case the source stops (`E_POLITO_LOGIN_EXTRA_STEP`) and the feeds are unaffected; if the university refuses the password, further attempts are paused until you change it. It never deletes feed events and never makes an incomplete result look complete.
 
-**Not built:** one calendar per course (decision 013), screenshots. Everything else in the plan exists.
+**Also built:** leaving chosen Moodle courses out, and Moodle events in a Google calendar of their own (decision 040; tested against an in-memory calendar only). **Not built:** one calendar per course (decision 013), screenshots. Everything else in the plan exists.
 
 What is simulated: `--fixture DIR` (developer only) uses an in-memory calendar instead of Google and says so in its output; the ICS parser it can use is the real one. Everything else in the program talks to the real services (it is the tests that use fakes).
 

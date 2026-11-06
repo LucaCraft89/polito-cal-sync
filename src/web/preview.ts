@@ -132,7 +132,14 @@ export function toPreview(
       exceeded: plan.safety.exceeded,
     },
     incompleteSources: plan.incompleteSources,
-    notes: out.sourceNotes.map(clean),
+    notes: [
+      ...out.sourceNotes.map(clean),
+      ...(out.moves && out.moves.toMoodle + out.moves.toPolito > 0
+        ? [
+            `${out.moves.toMoodle} event(s) will move to the Moodle calendar and ${out.moves.toPolito} back to the Polito calendar: the new copy is created first, the old one is deleted after, and moves do not count toward the deletion limit.`,
+          ]
+        : []),
+    ],
     problems,
     squads: [...out.squadsSeen].map(([courseId, labels]) => {
       const name = out.courseNames.get(`polito:${courseId}`);

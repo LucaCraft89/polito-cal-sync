@@ -82,4 +82,45 @@ describe('Test button for live Moodle', () => {
     expect(creates[0]?.title).toBe('[Moodle] Quiz 1 opens');
     expect(creates[0]?.course).toBe('Invented Chemistry');
   });
+
+  it('lists the Moodle courses after a test, lets some be left out, and the test then shows fewer events', async () => {
+    const s = await setup();
+    s.m.state.courses = [course(11, 'Invented Chemistry'), course(12, 'Mathematical Lab')];
+    s.m.state.events = [
+      event(1, { courseid: 11 }),
+      event(2, { courseid: 12 }),
+      event(3, { courseid: 12 }),
+    ];
+    const get = (p: string) => h!.call('GET', p, { cookie: s.auth.cookie });
+    expect((await get('/api/courses')).json.moodleCourses).toBeUndefined(); // nothing read yet
+    expect((await s.post('/api/sources/moodle/test')).json).toMatchObject({
+      ok: true,
+      events: 3,
+      courses: 2,
+    });
+    expect((await get('/api/courses')).json.moodleCourses).toEqual([
+      { courseId: '11', name: 'Invented Chemistry', excluded: false },
+      { courseId: '12', name: 'Mathematical Lab', excluded: false },
+    ]);
+    const put = await h!.put('/api/settings', s.auth, {
+      set: { 'moodle.excludedCourses': ['12'] },
+    });
+    expect(put.status).toBe(200);
+    expect((await get('/api/courses')).json.moodleCourses[1]).toMatchObject({
+      courseId: '12',
+      excluded: true,
+    });
+    s.clock.t += 16 * 60_000;
+    expect((await s.post('/api/sources/moodle/test')).json).toMatchObject({
+      ok: true,
+      events: 1,
+      courses: 2,
+    });
+    // Anything but course numbers is refused, and an environment variable locks it.
+    for (const bad of [['x'], ['1.5'], ['1,2'], 'abc']) {
+      expect(
+        (await h!.put('/api/settings', s.auth, { set: { 'moodle.excludedCourses': bad } })).status,
+      ).toBe(422);
+    }
+  });
 });

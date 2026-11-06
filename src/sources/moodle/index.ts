@@ -32,6 +32,8 @@ export interface MoodleSourceOptions {
   /** How far back and ahead events are kept, in days. Default 366 each way (as the ICS source). */
   pastDays?: number;
   futureDays?: number;
+  /** Moodle course ids whose events are left out (their names are still read, for the course list). */
+  excludedCourses?: readonly string[];
   /** Test hooks for the login and the web-service calls (fetch, allowed hosts, pauses). */
   portal?: PortalOptions;
 }
@@ -205,14 +207,22 @@ export class MoodleSource implements Source {
       'options[timestart]': nowS - (this.o.pastDays ?? 366) * DAY_S,
       'options[timeend]': nowS + (this.o.futureDays ?? 366) * DAY_S,
     };
-    [...names.keys()].forEach((id, i) => (params[`events[courseids][${i}]`] = id));
+    const asked = [...names.keys()].filter(
+      (id) => !(this.o.excludedCourses ?? []).includes(String(id)),
+    );
+    asked.forEach((id, i) => (params[`events[courseids][${i}]`] = id));
     const answer = (await this.ws(token, 'core_calendar_get_calendar_events', params)) as {
       events?: unknown;
     } | null;
     if (!answer || typeof answer !== 'object' || !Array.isArray(answer.events)) {
       throw unexpected('the event list is missing');
     }
-    const mapped = mapMoodleEvents(answer.events, this.o.baseUrl, names);
+    const excluded = new Set(this.o.excludedCourses ?? []);
+    const mapped = mapMoodleEvents(
+      answer.events.filter((e) => !excluded.has(String((e as { courseid?: unknown }).courseid))),
+      this.o.baseUrl,
+      names,
+    );
     reports.push({
       step: 'events',
       status: 'ok',

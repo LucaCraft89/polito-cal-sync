@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import type { OwnedCalendar } from '../google/calendar.js';
+import type { ManagedEvent, OwnedCalendar } from '../google/calendar.js';
 import type { SourceResult } from '../sources/types.js';
 import { toUserError, UserError } from '../util/errors.js';
 import { applyPlan, type ApplyResult } from './applier.js';
@@ -15,6 +15,11 @@ export interface SyncDeps {
   state?: StateStore;
   now?: () => Date;
   logger?: Logger;
+  /**
+   * Narrows the events found in the calendar before they are compared (an event that is being moved to another
+   * calendar is not judged here: it is not deleted by this run and does not count toward the deletion limit).
+   */
+  remoteView?: (remote: ManagedEvent[]) => ManagedEvent[];
 }
 
 export interface SyncOptions {
@@ -74,7 +79,7 @@ export async function runSync(
   let plan: Plan;
   try {
     const remote = await deps.calendar.listManaged();
-    plan = diff(results, remote, deps.threshold);
+    plan = diff(results, deps.remoteView ? deps.remoteView(remote) : remote, deps.threshold);
   } catch (err) {
     const e = toUserError(err);
     finish({

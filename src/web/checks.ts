@@ -271,12 +271,16 @@ export class SourceChecks {
         username,
         password,
         baseUrl: config.moodleBaseUrl,
+        excludedCourses: config.moodle.excludedCourses,
         dataDir: config.dataDir,
         logger: this.o.logger,
         ...(deps.now ? { now: deps.now } : {}),
         ...(deps.politoPortal ? { portal: deps.politoPortal } : {}),
       });
       const result = await source.fetch();
+      if (source.courseNames.size > 0) {
+        new CourseCatalog(config.dataDir).writeMoodle(source.courseNames, new Date(this.o.now()));
+      }
       const err = source.lastReport.find((r) => r.error)?.error;
       this.o.logger.info({ ok: result.complete }, 'ui moodle test done');
       return {

@@ -7,6 +7,8 @@ import {
   chooseCalendar,
   createCalendarsApi,
   DEFAULT_CALENDAR_NAME,
+  DEFAULT_MOODLE_CALENDAR_NAME,
+  MOODLE_CALENDAR_FILE,
   type CalendarsApi,
 } from '../google/calendars.js';
 import {
@@ -58,6 +60,11 @@ export interface GoogleView {
   calendar?: { name?: string };
   /** GOOGLE_CALENDAR_ID is set in the environment: the page cannot change the calendar. */
   calendarLocked: boolean;
+  /** Moodle events go to a calendar of their own (the setting is on). */
+  splitMoodle: boolean;
+  /** The Moodle calendar, when one is chosen. */
+  moodleCalendar?: { name?: string };
+  moodleCalendarLocked: boolean;
   /** The saved login file is damaged. */
   problem?: ProblemView;
   connect: ConnectView;
@@ -70,7 +77,10 @@ export interface CalendarOption {
   current: boolean;
 }
 
-export type CalendarPick = { id: string } | { create: { name?: string | undefined } };
+export type CalendarSlot = 'polito' | 'moodle';
+export type CalendarPick = ({ id: string } | { create: { name?: string | undefined } }) & {
+  slot?: CalendarSlot | undefined;
+};
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5 * 60_000;
 
@@ -107,12 +117,18 @@ export class GoogleService {
     const calendarLocked = this.o.env['GOOGLE_CALENDAR_ID'] !== undefined;
     const effective = config.google.calendarId ?? choice.read();
     const summary = config.google.calendarId ? undefined : choice.readSummary();
+    const moodleChoice = new CalendarChoice(this.o.dataDir, MOODLE_CALENDAR_FILE);
+    const moodleEffective = config.google.moodleCalendarId ?? moodleChoice.read();
+    const moodleSummary = config.google.moodleCalendarId ? undefined : moodleChoice.readSummary();
     return {
       clientConfigured: Boolean(config.google.clientId && config.google.clientSecret),
       connected,
       ...(account && connected ? { account } : {}),
       ...(effective ? { calendar: summary ? { name: summary } : {} } : {}),
       calendarLocked: calendarLocked && (this.o.env['GOOGLE_CALENDAR_ID'] ?? '') !== '',
+      splitMoodle: config.calendars.splitMoodle,
+      ...(moodleEffective ? { moodleCalendar: moodleSummary ? { name: moodleSummary } : {} } : {}),
+      moodleCalendarLocked: (this.o.env['GOOGLE_MOODLE_CALENDAR_ID'] ?? '') !== '',
       ...(bad ? { problem: bad } : {}),
       connect: this.connect,
     };
@@ -186,6 +202,7 @@ export class GoogleService {
     if (before !== undefined && before !== primary.id) {
       // The saved calendar belongs to the other account: it must not stay selected.
       new CalendarChoice(this.o.dataDir).clear();
+      new CalendarChoice(this.o.dataDir, MOODLE_CALENDAR_FILE).clear();
       this.log.info('google account changed; the calendar choice was cleared');
     }
     note.write(primary.id);
@@ -198,9 +215,15 @@ export class GoogleService {
   }
 
   /** The calendars the owner may choose: not the main calendar, and only ones they can edit. */
-  async listCalendars(): Promise<{ calendars: CalendarOption[]; hidden: number }> {
+  async listCalendars(
+    slot: CalendarSlot = 'polito',
+  ): Promise<{ calendars: CalendarOption[]; hidden: number }> {
     const config = this.config();
-    const current = config.google.calendarId ?? new CalendarChoice(this.o.dataDir).read();
+    const current =
+      slot === 'moodle'
+        ? (config.google.moodleCalendarId ??
+          new CalendarChoice(this.o.dataDir, MOODLE_CALENDAR_FILE).read())
+        : (config.google.calendarId ?? new CalendarChoice(this.o.dataDir).read());
     const all = await this.calendarsApi().list();
     const usable = all.filter(
       (c) => !c.primary && c.id !== 'primary' && ['owner', 'writer'].includes(c.accessRole),
@@ -217,27 +240,51 @@ export class GoogleService {
 
   /** Picks an existing calendar, or creates (or reuses by name) the dedicated one, and remembers it. */
   async chooseCalendar(pick: CalendarPick): Promise<GoogleView> {
-    const raw = this.o.env['GOOGLE_CALENDAR_ID'];
+    const slot: CalendarSlot = pick.slot ?? 'polito';
+    const envName = slot === 'moodle' ? 'GOOGLE_MOODLE_CALENDAR_ID' : 'GOOGLE_CALENDAR_ID';
+    const raw = this.o.env[envName];
     if (raw !== undefined && raw !== '') {
       throw new UserError({
         code: 'E_SETTING_LOCKED',
-        what: 'The calendar is set by the environment variable GOOGLE_CALENDAR_ID, so it was not changed here.',
+        what: `The calendar is set by the environment variable ${envName}, so it was not changed here.`,
         why: 'A variable set in the environment (.env or Docker) always wins over this page.',
-        action: 'Remove GOOGLE_CALENDAR_ID from the environment and restart, then choose here.',
+        action: `Remove ${envName} from the environment and restart, then choose here.`,
       });
     }
     const config = this.config();
+    const file = slot === 'moodle' ? MOODLE_CALENDAR_FILE : 'google-calendar.json';
+    const settingKey = slot === 'moodle' ? 'google.moodleCalendarId' : 'google.calendarId';
     const chosen = await chooseCalendar(this.calendarsApi(), {
       tz: config.tz,
       ...('id' in pick ? { pickId: pick.id } : {}),
-      ...('create' in pick ? { name: pick.create.name ?? DEFAULT_CALENDAR_NAME } : {}),
+      ...('create' in pick
+        ? {
+            name:
+              pick.create.name ??
+              (slot === 'moodle' ? DEFAULT_MOODLE_CALENDAR_NAME : DEFAULT_CALENDAR_NAME),
+          }
+        : {}),
     });
-    new CalendarChoice(this.o.dataDir).write(chosen.id, chosen.summary);
-    // A calendar id saved as a setting would win over this choice.
-    if (this.o.settings.read()['google.calendarId'] !== undefined) {
-      this.o.settings.apply({ clear: ['google.calendarId'] }, this.o.env);
+    // The two calendars must differ, or the split would mix them again.
+    const other =
+      slot === 'moodle'
+        ? (config.google.calendarId ?? new CalendarChoice(this.o.dataDir).read())
+        : (config.google.moodleCalendarId ??
+          new CalendarChoice(this.o.dataDir, MOODLE_CALENDAR_FILE).read());
+    if (other !== undefined && other === chosen.id) {
+      throw new UserError({
+        code: 'E_GOOGLE_CALENDARS_SAME',
+        what: 'The Polito calendar and the Moodle calendar would be the same calendar, so nothing was changed.',
+        why: 'Keeping Moodle events apart needs two different calendars.',
+        action: 'Choose another calendar, or create a new one.',
+      });
     }
-    this.o.audit.append('google.calendar', { action: chosen.action });
+    new CalendarChoice(this.o.dataDir, file).write(chosen.id, chosen.summary);
+    // A calendar id saved as a setting would win over this choice.
+    if (this.o.settings.read()[settingKey] !== undefined) {
+      this.o.settings.apply({ clear: [settingKey] }, this.o.env);
+    }
+    this.o.audit.append('google.calendar', { action: chosen.action, slot });
     this.log.info({ action: chosen.action }, 'ui chose the dedicated calendar');
     this.o.onChange?.();
     return this.status();

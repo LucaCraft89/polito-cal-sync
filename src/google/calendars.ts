@@ -25,6 +25,8 @@ export interface CalendarsApi {
 }
 
 export const DEFAULT_CALENDAR_NAME = 'Polito (polito-cal-sync)';
+export const DEFAULT_MOODLE_CALENDAR_NAME = 'Moodle (polito-cal-sync)';
+export const MOODLE_CALENDAR_FILE = 'google-calendar-moodle.json';
 const OPTIONS = { headers: { 'User-Agent': USER_AGENT }, timeout: 30_000 } as const;
 
 async function guarded<T>(fn: () => Promise<T>, calendarGone = false): Promise<T> {
@@ -107,8 +109,9 @@ export function createCalendarsApi(auth: Auth.OAuth2Client): CalendarsApi {
 /** The calendar we write to, remembered in DATA_DIR (not a secret, but private to the owner). */
 export class CalendarChoice {
   private readonly path: string;
-  constructor(dataDir: string) {
-    this.path = join(dataDir, 'google-calendar.json');
+  /** `file`: where the choice is kept (the Moodle calendar, when split off, has its own file). */
+  constructor(dataDir: string, file = 'google-calendar.json') {
+    this.path = join(dataDir, file);
   }
   private load(): { calendarId?: unknown; summary?: unknown } {
     try {

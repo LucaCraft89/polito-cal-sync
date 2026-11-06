@@ -80,6 +80,8 @@ describe('Google connect in the UI', () => {
       clientConfigured: false,
       connected: false,
       calendarLocked: false,
+      splitMoodle: false,
+      moodleCalendarLocked: false,
       connect: { state: 'idle' },
     });
   });
@@ -367,5 +369,64 @@ describe('another Google account', () => {
     expect(r.json.account).toBe('second@example.invalid');
     expect(r.json.calendar).toBeUndefined();
     expect(new CalendarChoice(h!.dataDir).read()).toBeUndefined();
+  });
+});
+
+describe('a second calendar for Moodle events', () => {
+  it('shows the split setting and the Moodle calendar; picks and creates it in its own slot, never the same as the Polito one', async () => {
+    const s = await setup();
+    const status = async (): Promise<Record<string, unknown>> =>
+      (await s.call('GET', '/api/google')).json as Record<string, unknown>;
+    expect(await status()).toMatchObject({ splitMoodle: false, moodleCalendarLocked: false });
+    expect((await status()).moodleCalendar).toBeUndefined();
+
+    await s.call('POST', '/api/google/calendar', { id: 'work' });
+    // Same calendar for Moodle: refused, nothing saved.
+    const same = await s.call('POST', '/api/google/calendar', { id: 'work', slot: 'moodle' });
+    expect(same.status).toBe(409);
+    expect(same.json.error.code).toBe('E_GOOGLE_CALENDARS_SAME');
+    expect((await status()).moodleCalendar).toBeUndefined();
+
+    // Create it: default name, in the Moodle slot; the Polito calendar is untouched.
+    const made = await s.call('POST', '/api/google/calendar', { create: {}, slot: 'moodle' });
+    expect(made.status).toBe(200);
+    expect(made.json.moodleCalendar.name).toBe('Moodle (polito-cal-sync)');
+    expect(made.json.calendar.name).toBe('Work');
+    expect(new CalendarChoice(h!.dataDir).read()).toBe('work');
+    expect(new CalendarChoice(h!.dataDir, 'google-calendar-moodle.json').read()).toBeDefined();
+
+    // The Polito calendar cannot be moved onto the Moodle one either.
+    const moodleId = new CalendarChoice(h!.dataDir, 'google-calendar-moodle.json').read();
+    const back = await s.call('POST', '/api/google/calendar', { id: moodleId, slot: 'polito' });
+    expect(back.json.error.code).toBe('E_GOOGLE_CALENDARS_SAME');
+
+    // The list marks the current one per slot; the main calendar is never offered.
+    const list = (await s.call('GET', '/api/google/calendars?slot=moodle')).json.calendars as {
+      id: string;
+      current: boolean;
+    }[];
+    expect(list.find((c) => c.id === moodleId)?.current).toBe(true);
+    expect(list.some((c) => c.id === 'me@example.invalid')).toBe(false);
+    const primary = await s.call('POST', '/api/google/calendar', {
+      id: 'me@example.invalid',
+      slot: 'moodle',
+    });
+    expect(primary.json.error.code).toBe('E_GOOGLE_CALENDAR_IS_PRIMARY');
+  });
+
+  it('the setting is saved like the others, and the Moodle calendar id can be locked by the environment', async () => {
+    const s = await setup();
+    await h!.put('/api/settings', s.auth, { set: { 'calendars.splitMoodle': true } });
+    expect((await s.call('GET', '/api/google')).json.splitMoodle).toBe(true);
+    await h!.close();
+    const locked = await setup({
+      env: { GOOGLE_MOODLE_CALENDAR_ID: 'work', CALENDAR_SPLIT_MOODLE: 'true' },
+    });
+    const st = (await locked.call('GET', '/api/google')).json as unknown;
+    expect(st).toMatchObject({ splitMoodle: true, moodleCalendarLocked: true, moodleCalendar: {} });
+    const r = await locked.call('POST', '/api/google/calendar', { id: 'work', slot: 'moodle' });
+    expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe('E_SETTING_LOCKED');
+    expect(r.json.error.what).toContain('GOOGLE_MOODLE_CALENDAR_ID');
   });
 });

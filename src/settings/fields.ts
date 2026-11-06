@@ -168,6 +168,30 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     toEnv: (v) => v,
     read: (c) => c.google.calendarId,
   }),
+  field({
+    key: 'google.moodleCalendarId',
+    env: 'GOOGLE_MOODLE_CALENDAR_ID',
+    secret: false,
+    value: z.string().min(1).max(300),
+    toEnv: (v) => v,
+    read: (c) => c.google.moodleCalendarId,
+  }),
+  field({
+    key: 'calendars.splitMoodle',
+    env: 'CALENDAR_SPLIT_MOODLE',
+    secret: false,
+    value: z.boolean(),
+    toEnv: (v) => String(v),
+    read: (c) => c.calendars.splitMoodle,
+  }),
+  field({
+    key: 'moodle.excludedCourses',
+    env: 'MOODLE_EXCLUDED_COURSES',
+    secret: false,
+    value: z.array(z.string().regex(/^\d+$/)).max(200),
+    toEnv: (v) => v.join(','),
+    read: (c) => c.moodle.excludedCourses,
+  }),
 ];
 
 export const FIELD_BY_KEY: ReadonlyMap<string, SettingField> = new Map(

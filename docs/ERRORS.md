@@ -142,6 +142,12 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 **Why:** this tool writes into a dedicated calendar so it can never mix with your real events. `primary`, or the id that equals your email address, is the main calendar.
 **What to do:** run `auth google` without `--calendar-id` to create the dedicated calendar, or pass the id of a secondary calendar (Google Calendar, Settings, the calendar, "Integrate calendar"). Clear `GOOGLE_CALENDAR_ID` if you set it to your email.
 
+## E_GOOGLE_CALENDARS_SAME
+
+**What happened:** the Polito calendar and the Moodle calendar are set to the same Google calendar, so nothing was synced.
+**Why:** keeping Moodle events apart needs two different calendars; the same one would mix them again.
+**What to do:** under Settings choose another calendar for Moodle (or create a new one), or switch "Keep Moodle events in their own calendar" off.
+
 ## E_ICS_FEED_FETCH_FAILED
 
 **What happened:** a calendar feed could not be downloaded this time.

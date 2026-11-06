@@ -1,7 +1,8 @@
 import type { Logger } from 'pino';
 import { ensureDataDir, type Config } from '../config/index.js';
 import { OwnedCalendar } from '../google/calendar.js';
-import { connectGoogle, type GoogleRuntime } from '../google/runtime.js';
+import { CalendarChoice, MOODLE_CALENDAR_FILE } from '../google/calendars.js';
+import { connectGoogle, moodleCalendarMissing, type GoogleRuntime } from '../google/runtime.js';
 import { IcsSource, type FeedReport } from '../sources/ics/index.js';
 import { MoodleSource } from '../sources/moodle/index.js';
 import { CourseCatalog } from '../sources/polito/catalog.js';
@@ -10,6 +11,7 @@ import type { PortalOptions } from '../sources/polito/portal/login.js';
 import type { Source, SourceResult } from '../sources/types.js';
 import { toUserError, UserError } from '../util/errors.js';
 import { runSync, type SyncOptions, type SyncReport } from './engine.js';
+import { runSplitSync } from './split.js';
 import { acquireRunLock } from './lock.js';
 import { StateStore } from './state.js';
 
@@ -37,6 +39,9 @@ export interface RunOutput {
   report: SyncReport;
   results: SourceResult[];
   calendarId: string;
+  /** Moodle events are kept in their own calendar: its id, and how many events change calendar in this run. */
+  moodleCalendarId?: string;
+  moves?: { toMoodle: number; toPolito: number };
   feeds: FeedReport[];
   /** Sources other than ICS that failed or came back incomplete, with the reason. */
   sourceErrors: { source: string; error: UserError }[];
@@ -111,6 +116,7 @@ export function buildSources(ctx: RunContext): {
       username,
       password,
       baseUrl: config.moodleBaseUrl,
+      excludedCourses: config.moodle.excludedCourses,
       dataDir: config.dataDir,
       logger,
       ...(deps.now ? { now: deps.now } : {}),
@@ -197,6 +203,16 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
         logger.warn({ err }, 'could not save the course list');
       }
     }
+    if (moodle && moodle.courseNames.size > 0) {
+      try {
+        new CourseCatalog(config.dataDir).writeMoodle(
+          moodle.courseNames,
+          (deps.now ?? (() => new Date()))(),
+        );
+      } catch (err) {
+        logger.warn({ err }, 'could not save the Moodle course list');
+      }
+    }
     for (const r of polito?.lastReport ?? []) {
       if (r.error) sourceErrors.push({ source: polito?.id ?? 'polito', error: r.error });
     }
@@ -204,22 +220,58 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
       if (r.error) sourceErrors.push({ source: moodle?.id ?? 'moodle', error: r.error });
     }
     state = options.dryRun ? undefined : StateStore.open(StateStore.fileIn(config.dataDir));
-    const report = await runSync(
-      {
-        calendar: new OwnedCalendar(google.api, google.calendarId),
-        tz: config.tz,
-        threshold: config.deleteThreshold,
-        logger,
-        ...(state ? { state } : {}),
-        ...(deps.now ? { now: deps.now } : {}),
-      },
-      results,
-      options,
-    );
+    let report: SyncReport;
+    let moves: { toMoodle: number; toPolito: number } | undefined;
+    const savedMoodleCalendar =
+      google.moodleCalendarId ??
+      config.google.moodleCalendarId ??
+      new CalendarChoice(config.dataDir, MOODLE_CALENDAR_FILE).read();
+    if (config.calendars.splitMoodle || savedMoodleCalendar) {
+      const split = config.calendars.splitMoodle;
+      const moodleId = google.moodleCalendarId ?? savedMoodleCalendar;
+      if (!moodleId) throw moodleCalendarMissing();
+      const sr = await runSplitSync(
+        {
+          routing: split ? 'split' : 'merge',
+          polito: new OwnedCalendar(google.api, google.calendarId),
+          moodle: new OwnedCalendar(google.api, moodleId),
+          tz: config.tz,
+          threshold: config.deleteThreshold,
+          logger,
+          ...(state ? { state } : {}),
+          ...(deps.now ? { now: deps.now } : {}),
+        },
+        results,
+        options,
+      );
+      report = sr;
+      moves = sr.moves;
+      // Switched off and the Moodle calendar holds nothing of ours any more: stop looking at it.
+      if (!split && !options.dryRun && sr.moveBack && sr.moveBack.empty) {
+        new CalendarChoice(config.dataDir, MOODLE_CALENDAR_FILE).clear();
+      }
+    } else {
+      report = await runSync(
+        {
+          calendar: new OwnedCalendar(google.api, google.calendarId),
+          tz: config.tz,
+          threshold: config.deleteThreshold,
+          logger,
+          ...(state ? { state } : {}),
+          ...(deps.now ? { now: deps.now } : {}),
+        },
+        results,
+        options,
+      );
+    }
     return {
       report,
       results,
       calendarId: google.calendarId,
+      ...(config.calendars.splitMoodle && google.moodleCalendarId
+        ? { moodleCalendarId: google.moodleCalendarId }
+        : {}),
+      ...(moves ? { moves } : {}),
       feeds: ics?.lastReport ?? [],
       sourceErrors,
       sourceNotes: polito?.notes ?? [],

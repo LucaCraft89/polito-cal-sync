@@ -317,3 +317,106 @@ describe('Moodle source in a real sync (fake Google, invented Moodle)', () => {
     expect(down.sourceErrors[0]?.source).toBe('moodle');
   });
 });
+
+describe('Moodle source: courses left out', () => {
+  it('events of an excluded course are dropped, the course is not even asked for, and its name is still known', async () => {
+    const w = moodleWorld({
+      courses: [course(11, 'Invented Chemistry'), course(12, 'Mathematical Lab')],
+      events: [
+        event(1, { courseid: 11 }),
+        event(2, { courseid: 12 }),
+        event(3, { courseid: 12 }),
+        event(4, { courseid: 11 }),
+      ],
+    });
+    const dataDir = mkdtempSync(join(tmpdir(), 'pcs-moodle-'));
+    const source = new MoodleSource({
+      username: USER,
+      password: PASS,
+      baseUrl: MOODLE,
+      dataDir,
+      now: () => NOW,
+      excludedCourses: ['12'],
+      portal: moodleOpts(w.fetchImpl),
+    });
+    const r = await source.fetch();
+    expect(r.complete).toBe(true);
+    expect(r.events.map((e) => e.sourceId)).toEqual(['1', '4']); // even though the server answered all four
+    const p = w.calls.find((c) => c.fn === 'core_calendar_get_calendar_events')?.params;
+    expect(p?.get('events[courseids][0]')).toBe('11');
+    expect(p?.get('events[courseids][1]')).toBeNull();
+    expect(source.courseNames.get('moodle:12')).toBe('Mathematical Lab'); // still listed, so it can be switched back on
+  });
+});
+
+describe('Moodle events in their own calendar, in a real sync', () => {
+  async function setup(env: Record<string, string>, moodleId: string | undefined) {
+    const { runConfiguredSync } = await import('../src/sync/run.js');
+    const { loadConfig } = await import('../src/config/index.js');
+    const { MemoryEventsApi } = await import('../src/google/memory.js');
+    const w = moodleWorld({
+      courses: [course(11, 'Invented Chemistry')],
+      events: [event(1), event(2)],
+    });
+    const api = new MemoryEventsApi();
+    const dataDir = mkdtempSync(join(tmpdir(), 'pcs-moodle-split-'));
+    const config = (extra: Record<string, string> = {}) =>
+      loadConfig({
+        DATA_DIR: dataDir,
+        TZ: 'Europe/Rome',
+        SOURCE_MOODLE_ENABLED: 'true',
+        MOODLE_BASE_URL: MOODLE,
+        POLITO_USERNAME: USER,
+        POLITO_PASSWORD: PASS,
+        ...env,
+        ...extra,
+      });
+    const deps = {
+      now: () => NOW,
+      sleep: () => Promise.resolve(),
+      politoPortal: moodleOpts(w.fetchImpl),
+      googleFactory: () =>
+        Promise.resolve({
+          api,
+          calendarId: 'cal',
+          ...(moodleId ? { moodleCalendarId: moodleId } : {}),
+        }),
+    };
+    const run = (cfg = config(), options = { dryRun: false, force: false }) =>
+      runConfiguredSync({ config: cfg, logger, deps }, options);
+    const live = (id: string) => api.snapshot(id).filter((e) => e.status !== 'cancelled');
+    return { run, live, config, dataDir };
+  }
+
+  it('with the setting on, Moodle events go to the second calendar; without a second calendar the run says what is missing', async () => {
+    const s = await setup({ CALENDAR_SPLIT_MOODLE: 'true' }, 'cal-m');
+    const out = await s.run();
+    expect(out.report.applied).toMatchObject({ created: 2 });
+    expect(out.moodleCalendarId).toBe('cal-m');
+    expect(s.live('cal-m')).toHaveLength(2);
+    expect(s.live('cal')).toHaveLength(0);
+    expect(s.live('cal-m')[0]?.summary).toMatch(/^\[Moodle\] /); // the tag stays
+
+    const missing = await setup({ CALENDAR_SPLIT_MOODLE: 'true' }, undefined);
+    await expect(missing.run()).rejects.toMatchObject({ code: 'E_NOT_CONFIGURED' });
+  });
+
+  it('switched on later: the events already in the main calendar move; switched off: they move back and the Moodle calendar is forgotten', async () => {
+    const { CalendarChoice, MOODLE_CALENDAR_FILE } = await import('../src/google/calendars.js');
+    const s = await setup({}, 'cal-m');
+    await s.run(); // single calendar: both events land in "cal"
+    expect(s.live('cal')).toHaveLength(2);
+
+    const on = await s.run(s.config({ CALENDAR_SPLIT_MOODLE: 'true' }));
+    expect(on.moves).toEqual({ toMoodle: 2, toPolito: 0 });
+    expect(s.live('cal-m')).toHaveLength(2);
+    expect(s.live('cal')).toHaveLength(0);
+
+    new CalendarChoice(s.dataDir, MOODLE_CALENDAR_FILE).write('cal-m', 'Moodle');
+    const off = await s.run(s.config({ CALENDAR_SPLIT_MOODLE: 'false' }));
+    expect(off.moves).toEqual({ toMoodle: 0, toPolito: 2 });
+    expect(s.live('cal')).toHaveLength(2);
+    expect(s.live('cal-m')).toHaveLength(0);
+    expect(new CalendarChoice(s.dataDir, MOODLE_CALENDAR_FILE).read()).toBeUndefined(); // nothing left there: forgotten
+  });
+});

@@ -10,7 +10,15 @@ import {
   nextId,
   toast,
 } from '../dom.js';
-import { secretField, segmentedField, squadsField, switchField, textField } from '../forms.js';
+import {
+  moodleCoursesField,
+  secretField,
+  segmentedField,
+  squadsField,
+  switchField,
+  textField,
+} from '../forms.js';
+import { onTopic } from '../live.js';
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
 
@@ -128,14 +136,13 @@ export async function renderSources(rerender) {
   page.append(body);
   let settings;
   let lastPreview;
+  let moodleCourses;
   try {
     ({ settings } = await api('GET', '/api/settings'));
     // The squads on offer come from the last preview (they are only known from the portal's lessons).
-    lastPreview = {
-      squads: (await api('GET', '/api/courses').catch(() => ({ courses: [] }))).courses.filter(
-        (c) => c.labels.length > 0,
-      ),
-    };
+    const courseList = await api('GET', '/api/courses').catch(() => ({ courses: [] }));
+    moodleCourses = courseList.moodleCourses ?? [];
+    lastPreview = { squads: courseList.courses.filter((c) => c.labels.length > 0) };
   } catch (err) {
     body.replaceChildren(errorBanner(err));
     return page;
@@ -339,6 +346,16 @@ export async function renderSources(rerender) {
     view: s['moodle.enabled'],
     checked: s['moodle.enabled']?.value === true,
   });
+  const excludedNow = Array.isArray(s['moodle.excludedCourses']?.value)
+    ? s['moodle.excludedCourses'].value
+    : [];
+  const moodleCourseBox = h('div', { 'data-moodle-courses': true });
+  let courseField = moodleCoursesField({
+    view: s['moodle.excludedCourses'],
+    excluded: excludedNow,
+    courses: moodleCourses ?? [],
+  });
+  moodleCourseBox.append(courseField.el);
   const moodle = textField({
     label: 'Moodle address',
     view: s.moodleBaseUrl,
@@ -352,6 +369,7 @@ export async function renderSources(rerender) {
     { class: 'card', novalidate: true, 'aria-labelledby': 'h-moodle' },
     h('h2', { id: 'h-moodle', text: 'Moodle' }),
     moodleOn.el,
+    moodleCourseBox,
     moodle.el,
     errSlot(),
     h('div', { class: 'stack-sm', 'aria-live': 'polite', 'data-test-result': 'moodle' }),
@@ -374,10 +392,33 @@ export async function renderSources(rerender) {
     const set = {};
     if (moodleOn.read() !== moodleOn.initial) set['moodle.enabled'] = moodleOn.read();
     if (moodle.read() !== moodle.initial) set.moodleBaseUrl = moodle.read();
-    if (Object.keys(set).length === 0) return toast('Nothing to change');
-    if (await save(moodleCard, { set })) rerender();
+    const clearKeys = [];
+    if (courseField.changed()) {
+      const left = courseField.read();
+      if (left.length > 0) set['moodle.excludedCourses'] = left;
+      else clearKeys.push('moodle.excludedCourses');
+    }
+    if (Object.keys(set).length === 0 && clearKeys.length === 0) return toast('Nothing to change');
+    if (await save(moodleCard, { set, clear: clearKeys })) rerender();
   });
 
+  // The list of Moodle courses appears after the first read (a Moodle test, a preview or a sync); show it without a reload.
+  onTopic(['preview', 'sync'], page, async () => {
+    try {
+      const fresh = await api('GET', '/api/courses', undefined, { background: true });
+      const next = moodleCoursesField({
+        view: s['moodle.excludedCourses'],
+        excluded: excludedNow,
+        courses: fresh.moodleCourses ?? [],
+      });
+      if (next.ids !== courseField.ids && !courseField.changed()) {
+        courseField = next;
+        moodleCourseBox.replaceChildren(next.el);
+      }
+    } catch {
+      /* the next normal load shows what is wrong */
+    }
+  });
   body.replaceChildren(portalCard, feedCard, moodleCard);
   return page;
 }

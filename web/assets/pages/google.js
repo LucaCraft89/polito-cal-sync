@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { onTopic } from '../live.js';
 import { banner, button, chip, errorBanner, h, icon, loading, nextId, toast } from '../dom.js';
+import { switchField } from '../forms.js';
 
 const POLL_MS = 2000;
 
@@ -29,6 +30,7 @@ export function googleCard({ onChange } = {}) {
   const errors = h('div', { 'data-error': true, 'aria-live': 'assertive' });
   card.append(content, errors);
   let timer;
+  let splitView;
 
   const fail = (err) => errors.replaceChildren(errorBanner(err));
   const run = async (fn) => {
@@ -48,6 +50,8 @@ export function googleCard({ onChange } = {}) {
       content.replaceChildren();
       return;
     }
+    const settings = await api('GET', '/api/settings').catch(() => undefined);
+    splitView = settings?.settings?.find((x) => x.key === 'calendars.splitMoodle');
     draw(st);
     if (st.connect.state === 'waiting') {
       timer = setTimeout(() => {
@@ -147,6 +151,7 @@ export function googleCard({ onChange } = {}) {
           }),
         ),
         calendarPart(st),
+        splitPart(st),
       );
     } else {
       parts.push(
@@ -169,7 +174,10 @@ export function googleCard({ onChange } = {}) {
     content.replaceChildren(...parts);
   }
 
-  function calendarPart(st) {
+  function calendarPart(st, slot = 'polito') {
+    const moodle = slot === 'moodle';
+    const current = moodle ? st.moodleCalendar : st.calendar;
+    const locked = moodle ? st.moodleCalendarLocked : st.calendarLocked;
     const box = h('div', { class: 'stack' });
     const list = h('div', { class: 'stack' });
     const nameId = nextId('in');
@@ -179,10 +187,10 @@ export function googleCard({ onChange } = {}) {
       type: 'text',
       maxlength: '100',
       autocomplete: 'off',
-      placeholder: 'Polito (polito-cal-sync)',
+      placeholder: moodle ? 'Moodle (polito-cal-sync)' : 'Polito (polito-cal-sync)',
     });
     const choose = async (body, okText) => {
-      const r = await run(() => api('POST', '/api/google/calendar', body));
+      const r = await run(() => api('POST', '/api/google/calendar', { ...body, slot }));
       if (r) {
         toast(okText);
         draw(r);
@@ -193,11 +201,19 @@ export function googleCard({ onChange } = {}) {
       h(
         'h3',
         { class: 't-title' },
-        st.calendar ? 'Change the calendar' : 'Choose the dedicated calendar',
+        moodle
+          ? current
+            ? 'Change the Moodle calendar'
+            : 'Choose the Moodle calendar'
+          : current
+            ? 'Change the calendar'
+            : 'Choose the dedicated calendar',
       ),
       h('p', {
         class: 'muted',
-        text: 'Events are written to one calendar only, never your main one. The program never deletes a calendar.',
+        text: moodle
+          ? 'Moodle events are written to this calendar only, never your main one and never the Polito one. The program never deletes a calendar.'
+          : 'Events are written to one calendar only, never your main one. The program never deletes a calendar.',
       }),
       h(
         'div',
@@ -212,10 +228,10 @@ export function googleCard({ onChange } = {}) {
       h(
         'div',
         { class: 'row' },
-        button('Create the dedicated calendar', {
-          variant: st.calendar ? 'tonal' : 'filled',
+        button(moodle ? 'Create the Moodle calendar' : 'Create the dedicated calendar', {
+          variant: current ? 'tonal' : 'filled',
           iconName: 'add',
-          disabled: st.calendarLocked,
+          disabled: locked,
           onclick: () =>
             choose(
               { create: name.value.trim() ? { name: name.value.trim() } : {} },
@@ -224,10 +240,12 @@ export function googleCard({ onChange } = {}) {
         }),
         button('Pick one of my calendars', {
           variant: 'outlined',
-          disabled: st.calendarLocked,
+          disabled: locked,
           onclick: async () => {
             list.replaceChildren(loading('Asking Google…'));
-            const r = await run(() => api('GET', '/api/google/calendars'));
+            const r = await run(() =>
+              api('GET', `/api/google/calendars${moodle ? '?slot=moodle' : ''}`),
+            );
             if (!r) {
               list.replaceChildren();
               return;
@@ -238,17 +256,82 @@ export function googleCard({ onChange } = {}) {
       ),
       list,
     );
-    if (st.calendarLocked) {
+    if (locked) {
       box.append(
         h(
           'p',
           { class: 'field-help' },
           icon('lock'),
           ' Set by the environment variable ',
-          h('code', { text: 'GOOGLE_CALENDAR_ID' }),
+          h('code', { text: moodle ? 'GOOGLE_MOODLE_CALENDAR_ID' : 'GOOGLE_CALENDAR_ID' }),
           '. Change it there; it wins over this page.',
         ),
       );
+    }
+    return box;
+  }
+
+  /** Moodle events in a calendar of their own (the [Moodle] label stays in every title). */
+  function splitPart(st) {
+    const on = switchField({
+      label: 'Keep Moodle events in their own calendar',
+      help: 'Moodle events (deadlines, quizzes, reservations) go to a second calendar, so you can show or hide them on their own. The [Moodle] label stays in the title. Events already in the Polito calendar move over at the next sync: the new copy is created first and the old one deleted after, and moves do not count toward the deletion limit.',
+      view: splitView,
+      checked: st.splitMoodle,
+    });
+    const box = h(
+      'div',
+      { class: 'stack' },
+      h('h3', { class: 't-title', text: 'Moodle calendar' }),
+      on.el,
+    );
+    box.append(
+      h(
+        'div',
+        { class: 'card-actions' },
+        button('Save', {
+          variant: 'tonal',
+          onclick: async () => {
+            if (on.read() === on.initial) return toast('Nothing to change');
+            const ok = await run(() =>
+              api('PUT', '/api/settings', { set: { 'calendars.splitMoodle': on.read() } }),
+            );
+            if (ok) {
+              toast(
+                on.read()
+                  ? 'Moodle events will go to their own calendar'
+                  : 'Moodle events will go back',
+              );
+              await refresh();
+            }
+          },
+        }),
+      ),
+    );
+    if (st.splitMoodle) {
+      if (st.moodleCalendar) {
+        box.append(
+          h(
+            'dl',
+            { class: 'kv' },
+            h(
+              'div',
+              {},
+              h('dt', { text: 'Moodle calendar' }),
+              h('dd', { text: st.moodleCalendar.name ?? 'set by the environment' }),
+            ),
+          ),
+        );
+      } else {
+        box.append(
+          banner(
+            'warn',
+            'Choose the Moodle calendar',
+            'Moodle events are set to go to their own calendar, but none is chosen yet. Syncing waits until you create or pick it below.',
+          ),
+        );
+      }
+      box.append(calendarPart(st, 'moodle'));
     }
     return box;
   }
@@ -263,7 +346,7 @@ export function googleCard({ onChange } = {}) {
     }
     const group = h('fieldset', { class: 'check-group' }, h('legend', { text: 'Your calendars' }));
     for (const c of r.calendars) {
-      const input = h('input', { type: 'radio', name: 'cal', value: c.id });
+      const input = h('input', { type: 'radio', name: `cal-${nextId('g')}`, value: c.id });
       input.checked = c.current;
       group.append(h('label', { class: 'check-row' }, input, h('span', { text: c.name })));
     }

@@ -44,6 +44,16 @@ function checklist(s, g, extra) {
       to: '#/sources',
     },
   ];
+  if (g?.splitMoodle) {
+    items.splice(3, 0, {
+      ok: !!g.moodleCalendar,
+      title: 'Moodle calendar chosen',
+      text: g.moodleCalendar
+        ? `Moodle events go to ${g.moodleCalendar.name ? `"${g.moodleCalendar.name}"` : 'the calendar set by the environment'}.`
+        : 'Create or pick the calendar for Moodle events under Settings (you switched on "Keep Moodle events in their own calendar").',
+      to: '#/settings',
+    });
+  }
   if (polito) {
     const done = s['polito.username']?.set && s['polito.password']?.set;
     items.push({
