@@ -189,7 +189,12 @@ export class SyncService {
         this.o.settings.read(),
       );
       const out = await runConfiguredSync(
-        { config, logger: this.o.logger, ...(this.o.deps ? { deps: this.o.deps } : {}) },
+        {
+          config,
+          logger: this.o.logger,
+          lockLabel: 'the Sync now button',
+          ...(this.o.deps ? { deps: this.o.deps } : {}),
+        },
         {
           dryRun: false,
           force: forced,

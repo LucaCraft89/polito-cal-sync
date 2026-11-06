@@ -8,7 +8,7 @@ import { MemoryEventsApi } from '../src/google/memory.js';
 import { evaluateHealth, HeartbeatStore } from '../src/serve/heartbeat.js';
 import { ServeLoop } from '../src/serve/loop.js';
 import { createStatusServer } from '../src/serve/status.js';
-import { acquireRunLock, LOCK_STALE_MS } from '../src/sync/lock.js';
+import { acquireRunLock, LOCK_STALE_MS, readRunLock } from '../src/sync/lock.js';
 import { createLogger } from '../src/util/logger.js';
 import { loadConfig } from '../src/config/index.js';
 
@@ -191,6 +191,73 @@ describe('config', () => {
     expect(
       loadConfig({ SOURCE_POLITO_ICS_URLS: `${FEED} , https://b.example.invalid/x.ics,` }).icsUrls,
     ).toHaveLength(2);
+  });
+});
+
+describe('run lock: who holds it, and when it is dead', () => {
+  const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const mk = () => mkdtempSync(join(tmpdir(), 'pcs-lock-'));
+
+  it('the refusal says who holds it and since when; readRunLock reports it', () => {
+    const d = mk();
+    const lock = acquireRunLock(d, () => new Date('2026-11-06T11:31:00Z'), 'the scheduled service');
+    const now = () => new Date('2026-11-06T11:32:00Z');
+    expect(readRunLock(d, now)).toEqual({
+      by: 'the scheduled service',
+      since: '2026-11-06T11:31:00.000Z',
+    });
+    try {
+      acquireRunLock(d, now, 'the Sync now button');
+      expect.unreachable();
+    } catch (e) {
+      expect(String((e as Error).message)).toContain('E_SYNC_ALREADY_RUNNING');
+      expect((e as { what: string }).what).toContain('the scheduled service since 11:31 UTC');
+      expect((e as { action: string }).action).toContain('90 seconds');
+    }
+    lock.release();
+    expect(readRunLock(d, now)).toBeUndefined();
+  });
+
+  it('a holder that stopped giving signs of life is dead after 90 seconds, not after 20 minutes', () => {
+    const d = mk();
+    acquireRunLock(d, () => new Date(0), 'a stopped container', 60_000_000); // never beats, never released
+    expect(readRunLock(d, () => new Date(LOCK_STALE_MS - 1000))).toBeDefined();
+    expect(readRunLock(d, () => new Date(LOCK_STALE_MS + 1000))).toBeUndefined();
+    const l = acquireRunLock(d, () => new Date(LOCK_STALE_MS + 1000));
+    l.release();
+  });
+
+  it('a working holder refreshes the lock, so a long sync is never taken for dead', async () => {
+    const d = mk();
+    let t = 0;
+    const now = () => new Date(t);
+    const lock = acquireRunLock(d, now, 'a long sync', 10);
+    t = 5 * 60_000; // five minutes of work
+    await tick(40); // a beat writes the new time
+    expect(readRunLock(d, now)).toMatchObject({ by: 'a long sync' });
+    expect(() => acquireRunLock(d, now)).toThrow();
+    lock.release();
+  });
+
+  it('a holder that was taken over as dead never overwrites or removes the new lock', async () => {
+    const d = mk();
+    const now = () => new Date(0);
+    const old = acquireRunLock(d, now, 'the paused one', 10);
+    writeFileSync(
+      join(d, 'sync.lock'),
+      JSON.stringify({
+        at: new Date(0).toISOString(),
+        beat: new Date(0).toISOString(),
+        by: 'the new one',
+        token: 'other',
+      }),
+    );
+    await tick(40);
+    expect((JSON.parse(readFileSync(join(d, 'sync.lock'), 'utf8')) as { by: string }).by).toBe(
+      'the new one',
+    );
+    old.release();
+    expect(existsSync(join(d, 'sync.lock'))).toBe(true);
   });
 });
 

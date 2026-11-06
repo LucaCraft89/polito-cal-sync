@@ -168,9 +168,9 @@ Nothing on this page ever asks you to paste a password or token anywhere.
 
 ## E_SYNC_ALREADY_RUNNING
 
-**What happened:** another sync is running on the same data folder, so this one did not start.
-**Why:** the scheduled `serve` loop is syncing right now, or a manual `sync` is. Two at once could fight over the same calendar. A crashed run can leave its lock behind for up to 20 minutes.
-**What to do:** wait a minute and try again. If it still says so 20 minutes after a crash, it clears itself.
+**What happened:** a sync did not start because another one holds the lock on this data folder. The message says who (the scheduled service, the Sync now button or a command-line sync) and since when.
+**Why:** only one sync writes to the calendar at a time, so two never overlap. The holder refreshes the lock every 15 seconds while it works; a sync that was stopped in the middle (the container was restarted or recreated) leaves the lock behind, and it counts as dead about 90 seconds after its last sign of life.
+**What to do:** wait for the running sync to finish (the Service page shows it) and try again. If nothing is really running, wait about 90 seconds, or delete `sync.lock` in the data folder.
 
 ## E_SYNC_PLAN_CHANGED
 

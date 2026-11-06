@@ -20,6 +20,7 @@ import {
 import { SourceChecks } from './checks.js';
 import { EventBus } from './events.js';
 import { evaluateHealth, type Heartbeat } from '../serve/heartbeat.js';
+import { readRunLock } from '../sync/lock.js';
 import { problemFromCode } from './history.js';
 import { coursesView, historyView, resumeLogin } from './history.js';
 import { GoogleService, type GoogleDeps } from './google.js';
@@ -245,6 +246,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
   const serviceView = () => {
     const hb = o.service?.snapshot();
     if (!hb) return { available: false };
+    const lock = readRunLock(o.dataDir, () => new Date(now()));
     const config = loadConfig({ ...o.env, DATA_DIR: o.dataDir }, settings.read());
     const health = evaluateHealth(hb, new Date(now()));
     return {
@@ -252,6 +254,8 @@ export function createWebApp(o: WebAppOptions): WebApp {
       autoSync: hb.autoSync !== false,
       intervalMinutes: hb.intervalMinutes,
       running: hb.running === true,
+      /** A sync holds the lock right now (this service, the Sync now button or a command), and who. */
+      ...(lock ? { lock } : {}),
       healthy: health.healthy,
       ...(health.reason ? { reason: health.reason } : {}),
       ...(hb.lastRunAt ? { lastRunAt: hb.lastRunAt } : {}),

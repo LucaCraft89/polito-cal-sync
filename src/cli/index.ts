@@ -137,7 +137,10 @@ async function syncCommand(
   const logger = createLogger(env['LOG_LEVEL'] ? config.logLevel : 'warn', io.logStream);
 
   if (values.fixture === undefined) {
-    const out = await runConfiguredSync({ config, logger, deps }, { dryRun, force });
+    const out = await runConfiguredSync(
+      { config, logger, lockLabel: 'a command-line sync', deps },
+      { dryRun, force },
+    );
     io.out(
       formatReport(out.report, {
         tz: config.tz,
@@ -311,7 +314,7 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
     runOnce: async () => {
       reload();
       const out = await runConfiguredSync(
-        { config: live, logger, deps },
+        { config: live, logger, lockLabel: 'the scheduled service', deps },
         { dryRun: false, force: false },
       );
       const warning = out.feeds.find((f) => f.error)?.error ?? out.sourceErrors[0]?.error;

@@ -97,13 +97,14 @@ function statusCard(sv) {
     );
     return card;
   }
-  const state = sv.running
-    ? chip('info', 'Syncing now')
-    : !sv.autoSync
-      ? chip('warn', 'Paused')
-      : sv.healthy
-        ? chip('ok', 'On, waiting for the next run')
-        : chip('bad', 'Needs attention');
+  const state =
+    sv.running || sv.lock
+      ? chip('info', 'Syncing now')
+      : !sv.autoSync
+        ? chip('warn', 'Paused')
+        : sv.healthy
+          ? chip('ok', 'On, waiting for the next run')
+          : chip('bad', 'Needs attention');
   card.append(
     h('div', { class: 'row' }, state),
     h(
@@ -129,6 +130,15 @@ function statusCard(sv) {
         : null,
     ),
   );
+  if (sv.lock) {
+    card.append(
+      banner(
+        'info',
+        `A sync is running (${sv.lock.by})`,
+        `Started ${when(sv.lock.since)}. Sync now waits for it. If nothing is really running, the lock clears by itself about 90 seconds after the last sign of life.`,
+      ),
+    );
+  }
   if (!sv.healthy && sv.reason) card.append(banner('warn', 'The scheduler is behind', sv.reason));
   if (sv.error) {
     card.append(

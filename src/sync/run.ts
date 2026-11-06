@@ -26,6 +26,8 @@ export interface RuntimeDeps {
 }
 
 export interface RunContext {
+  /** Who is running this sync, in words, for the lock's message ("the scheduled service"). */
+  lockLabel?: string;
   config: Config;
   logger: Logger;
   deps?: RuntimeDeps;
@@ -156,7 +158,7 @@ export async function runConfiguredSync(ctx: RunContext, options: SyncOptions): 
   const { config, logger, deps = {} } = ctx;
   const { sources, ics, polito, moodle } = buildSources(ctx);
   ensureDataDir(config.dataDir);
-  const lock = options.dryRun ? undefined : acquireRunLock(config.dataDir, deps.now);
+  const lock = options.dryRun ? undefined : acquireRunLock(config.dataDir, deps.now, ctx.lockLabel);
   let state: StateStore | undefined;
   try {
     const google = await (
