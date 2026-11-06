@@ -2,7 +2,8 @@ import { api, setCsrf } from './api.js';
 import { clear, errorBanner, h, icon, loading, toast } from './dom.js';
 import { renderLogin, renderSetup } from './pages/auth.js';
 import { renderCourses } from './pages/courses.js';
-import { renderHistory } from './pages/history.js';
+import { renderService } from './pages/service.js';
+import { startLive, stopLive } from './live.js';
 import { renderOverview } from './pages/overview.js';
 import { renderPreview } from './pages/preview.js';
 import { renderSettings } from './pages/settings.js';
@@ -18,7 +19,7 @@ const ROUTES = [
   { path: 'preview', label: 'Preview', icon: 'preview', render: () => renderPreview() },
   { path: 'sources', label: 'Sources', icon: 'sources', render: () => renderSources(show) },
   { path: 'courses', label: 'Courses', icon: 'courses', render: () => renderCourses() },
-  { path: 'history', label: 'History', icon: 'history', render: () => renderHistory(show) },
+  { path: 'service', label: 'Service', icon: 'history', render: () => renderService(show) },
   {
     path: 'settings',
     label: 'Settings',
@@ -69,7 +70,7 @@ function mark() {
 
 /** Renders the current route into <main>. Stale answers (a slower, older render) are dropped. */
 async function show() {
-  const hash = location.hash.replace(/^#\//, '');
+  const hash = location.hash.replace(/^#\//, '').replace(/^history$/, 'service');
   current = ROUTES.find((r) => r.path === hash) ?? ROUTES[0];
   const mine = ++token;
   mark();
@@ -87,6 +88,7 @@ async function show() {
 }
 
 function authView(name, node, heading) {
+  stopLive();
   shell.dataset.view = 'auth';
   title.textContent = heading;
   document.title = `${heading} · polito-cal-sync`;
@@ -120,6 +122,7 @@ async function start(focus = false) {
   setCsrf(session.csrfToken);
   shell.dataset.view = 'app';
   buildNav();
+  startLive();
   await show();
   if (focus) main.focus({ preventScroll: true });
 }
@@ -140,6 +143,7 @@ window.fetch = async (...a) => {
   ) {
     toast('You were logged out. Log in again.');
     setCsrf(null);
+    stopLive();
     void start();
   }
   return res;

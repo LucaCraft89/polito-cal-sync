@@ -48,6 +48,14 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     read: (c) => c.syncIntervalMinutes,
   }),
   field({
+    key: 'syncAuto',
+    env: 'SYNC_AUTO',
+    secret: false,
+    value: z.boolean(),
+    toEnv: (v) => String(v),
+    read: (c) => c.syncAuto,
+  }),
+  field({
     key: 'deleteThreshold',
     env: 'DELETE_THRESHOLD',
     secret: false,

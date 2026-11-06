@@ -13,7 +13,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(method, path, body) {
+/** `background: true` marks a refresh the page does by itself, which must not keep the session alive. */
+export async function api(method, path, body, { background = false } = {}) {
   let res;
   try {
     res = await fetch(path, {
@@ -23,6 +24,7 @@ export async function api(method, path, body) {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(method !== 'GET' && csrf ? { 'X-CSRF-Token': csrf } : {}),
+        ...(background && method === 'GET' ? { 'X-Pcs-Background': '1' } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });

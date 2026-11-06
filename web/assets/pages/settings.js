@@ -34,7 +34,7 @@ export async function renderSettings(rerender, onLoggedOut) {
       {},
       h('p', {
         class: 'muted',
-        text: 'How often it syncs, your Google client, and access to this page.',
+        text: 'Your Google client, the deletion limit, and access to this page. The schedule is on the Service page.',
       }),
     ),
   );
@@ -60,14 +60,6 @@ export async function renderSettings(rerender, onLoggedOut) {
     value: s.tz.value ?? '',
     help: 'For example Europe/Rome. Times without a zone from the portal are read in this zone.',
   });
-  const interval = textField({
-    label: 'Sync every (minutes)',
-    view: s.syncIntervalMinutes,
-    value: String(s.syncIntervalMinutes.value ?? ''),
-    type: 'number',
-    inputmode: 'numeric',
-    help: 'Between 15 and 1440. Takes effect after the program restarts.',
-  });
   const limit = textField({
     label: 'Deletion limit (%)',
     view: s.deleteThreshold,
@@ -84,7 +76,6 @@ export async function renderSettings(rerender, onLoggedOut) {
     { class: 'card', novalidate: true, 'aria-labelledby': 'h-gen' },
     h('h2', { id: 'h-gen', text: 'General' }),
     tz.el,
-    interval.el,
     limit.el,
     slot(),
     h('div', { class: 'card-actions' }, button('Save', { type: 'submit' })),
@@ -93,7 +84,6 @@ export async function renderSettings(rerender, onLoggedOut) {
     ev.preventDefault();
     const set = {};
     if (tz.read() !== tz.initial) set.tz = tz.read();
-    if (interval.read() !== interval.initial) set.syncIntervalMinutes = Number(interval.read());
     if (limit.read() !== limit.initial) set.deleteThreshold = Number(limit.read()) / 100;
     if (await save(general, { set })) rerender();
   });

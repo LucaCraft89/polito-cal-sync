@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { onTopic } from '../live.js';
 import {
   banner,
   button,
@@ -262,25 +263,38 @@ export async function renderPreview() {
     syncSlot,
     result,
   );
+  let busy = false; // a preview started from this page is running
+  let following = false;
+  const follow = () => {
+    if (following) return;
+    following = true;
+    void followSync(syncSlot).finally(() => (following = false));
+  };
   const run = async () => {
+    busy = true;
     syncSlot.replaceChildren();
-    result.replaceChildren(
-      loading('Reading your sources. The Polito portal can take about 20 seconds…'),
-    );
     try {
-      const r = await api('POST', '/api/preview', {});
-      show(r.preview);
-    } catch (err) {
-      result.replaceChildren(errorBanner(err));
-      // The previous result stays useful next to the explanation (a refused repeat, a failed attempt).
+      result.replaceChildren(
+        loading('Reading your sources. The Polito portal can take about 20 seconds…'),
+      );
       try {
-        const last = await api('GET', '/api/preview');
-        if (last.preview) result.append(view(last.preview));
-      } catch {
-        /* the banner above already says what is wrong */
+        const r = await api('POST', '/api/preview', {});
+        show(r.preview);
+      } catch (err) {
+        result.replaceChildren(errorBanner(err));
+        // The previous result stays useful next to the explanation (a refused repeat, a failed attempt).
+        try {
+          const last = await api('GET', '/api/preview');
+          if (last.preview) result.append(view(last.preview));
+        } catch {
+          /* the banner above already says what is wrong */
+        }
       }
+    } finally {
+      busy = false;
     }
   };
+
   // Show the last preview of this session, if the server still has it.
   try {
     const r = await api('GET', '/api/preview');
@@ -297,10 +311,37 @@ export async function renderPreview() {
     result.replaceChildren(errorBanner(err));
   }
   page.append(button('Preview now', { class: 'fab', iconName: 'play', onclick: run }));
+  // Live: a preview made elsewhere (another tab), a sync, or a scheduled run that made the preview outdated.
+  onTopic('preview', page, async () => {
+    if (busy) return;
+    try {
+      const r = await api('GET', '/api/preview', undefined, { background: true });
+      if (r.preview) show(r.preview);
+      else
+        result.replaceChildren(
+          banner(
+            'info',
+            'No current preview',
+            'The calendar changed, or no preview was made yet. Press "Preview now" to read your sources again.',
+          ),
+        );
+    } catch {
+      /* the next normal request shows what is wrong */
+    }
+  });
+  onTopic('sync', page, async () => {
+    try {
+      const st = await api('GET', '/api/sync', undefined, { background: true });
+      if (st.run.state === 'running') follow();
+      else if (st.run.state === 'done') syncSlot.replaceChildren(syncResult(st.run));
+    } catch {
+      /* ignore */
+    }
+  });
   // A sync started from this page may be running or just finished: say so (does not delay the page).
   void api('GET', '/api/sync')
     .then((st) => {
-      if (st.run.state === 'running') void followSync(syncSlot);
+      if (st.run.state === 'running') follow();
       else if (st.run.state === 'done') syncSlot.replaceChildren(syncResult(st.run));
     })
     .catch(() => {

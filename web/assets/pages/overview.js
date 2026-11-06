@@ -1,17 +1,6 @@
 import { api } from '../api.js';
+import { onTopic } from '../live.js';
 import { banner, chip, errorBanner, h, icon, loading, when } from '../dom.js';
-
-async function status() {
-  try {
-    const res = await fetch('/status', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-    return res.ok ? await res.json() : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 const byKey = (list) => Object.fromEntries(list.map((s) => [s.key, s]));
 
@@ -87,6 +76,76 @@ function checklist(s, g, extra) {
   return items;
 }
 
+/** The "Last sync" card, from the scheduled service's own state. */
+function lastSyncCard(sv) {
+  const run = h(
+    'section',
+    { class: 'card', 'aria-labelledby': 'h-run' },
+    h('h2', { id: 'h-run', text: 'Automatic sync' }),
+  );
+  if (!sv?.available) {
+    run.append(
+      banner(
+        'info',
+        'Not connected to the scheduler',
+        'The automatic sync runs inside the service ("serve", or the Docker container). Use Preview to see what a sync would do.',
+      ),
+    );
+    return run;
+  }
+  const state = sv.running
+    ? chip('info', 'Syncing now')
+    : !sv.autoSync
+      ? chip('warn', 'Paused')
+      : sv.healthy
+        ? chip('ok', 'On')
+        : chip('bad', 'Needs attention');
+  run.append(
+    h(
+      'div',
+      { class: 'row' },
+      state,
+      sv.lastStatus
+        ? sv.lastStatus === 'ok' || sv.lastStatus === 'partial'
+          ? chip('ok', `Last: ${sv.lastStatus}`)
+          : chip('warn', `Last: ${sv.lastStatus}`)
+        : null,
+    ),
+    h(
+      'dl',
+      { class: 'kv' },
+      h('div', {}, h('dt', { text: 'Last run' }), h('dd', { text: when(sv.lastRunAt) })),
+      h(
+        'div',
+        {},
+        h('dt', { text: 'Next run' }),
+        h('dd', { text: sv.autoSync ? when(sv.nextRunAt) : 'paused' }),
+      ),
+      sv.lastCounts
+        ? h(
+            'div',
+            {},
+            h('dt', { text: 'Added / changed / removed' }),
+            h('dd', {
+              text: `${sv.lastCounts.created} / ${sv.lastCounts.patched} / ${sv.lastCounts.deleted}`,
+            }),
+          )
+        : null,
+      sv.error
+        ? h(
+            'div',
+            {},
+            h('dt', { text: 'Last problem' }),
+            h('dd', {}, h('code', { text: sv.error.code })),
+          )
+        : null,
+    ),
+    sv.healthy ? null : banner('warn', 'The sync loop needs attention', sv.reason ?? ''),
+    h('a', { class: 'btn btn-text', href: '#/service' }, 'Schedule and history'),
+  );
+  return run;
+}
+
 export async function renderOverview() {
   const page = h(
     'div',
@@ -95,120 +154,75 @@ export async function renderOverview() {
   );
   const body = h('div', { class: 'cards' }, loading('Loading…'));
   page.append(body);
-  try {
-    const [{ settings }, st, g, pv, hist] = await Promise.all([
-      api('GET', '/api/settings'),
-      status(),
-      api('GET', '/api/google').catch(() => undefined),
-      api('GET', '/api/preview').catch(() => undefined),
-      api('GET', '/api/history?limit=1').catch(() => undefined),
-    ]);
-    const s = byKey(settings);
-    const synced = (hist?.runs?.length ?? 0) > 0;
-    const items = checklist(s, g, { previewed: !!pv?.preview || synced, synced });
-    const next = items.find((it) => !it.ok);
-    const cards = [];
 
-    const run = h(
-      'section',
-      { class: 'card', 'aria-labelledby': 'h-run' },
-      h('h2', { id: 'h-run', text: 'Last sync' }),
-    );
-    if (!st || st.lastRunAt === undefined) {
-      run.append(
-        banner(
-          'info',
-          'No sync has run yet',
-          'The first run happens when "serve" starts. Use Preview to see what it would do.',
-        ),
-      );
-    } else {
-      const ok = st.lastStatus === 'ok' || st.lastStatus === 'partial';
-      run.append(
-        h(
-          'div',
-          { class: 'row' },
-          st.healthy ? chip('ok', 'Healthy') : chip('bad', 'Needs attention'),
-          ok ? chip('ok', st.lastStatus) : chip('warn', st.lastStatus ?? 'unknown'),
-        ),
-        h(
-          'dl',
-          { class: 'kv' },
-          h('div', {}, h('dt', { text: 'Last run' }), h('dd', { text: when(st.lastRunAt) })),
-          h('div', {}, h('dt', { text: 'Next run' }), h('dd', { text: when(st.nextRunAt) })),
-          st.lastCounts
-            ? h(
-                'div',
-                {},
-                h('dt', { text: 'Created / changed / removed' }),
-                h('dd', {
-                  text: `${st.lastCounts.created} / ${st.lastCounts.patched} / ${st.lastCounts.deleted}`,
-                }),
-              )
-            : null,
-          st.lastErrorCode
-            ? h(
-                'div',
-                {},
-                h('dt', { text: 'Last problem' }),
-                h('dd', {}, h('code', { text: st.lastErrorCode })),
-              )
-            : null,
-        ),
-        st.healthy ? null : banner('warn', 'The sync loop needs attention', st.reason ?? ''),
-      );
-    }
-    cards.push(run);
+  /** `background`: a refresh pushed by the server (it must not keep the session alive and stays quiet on errors). */
+  async function load(background) {
+    try {
+      const [{ settings }, sv, g, pv, hist] = await Promise.all([
+        api('GET', '/api/settings', undefined, { background }),
+        api('GET', '/api/service', undefined, { background }).catch(() => undefined),
+        api('GET', '/api/google', undefined, { background }).catch(() => undefined),
+        api('GET', '/api/preview', undefined, { background }).catch(() => undefined),
+        api('GET', '/api/history?limit=1', undefined, { background }).catch(() => undefined),
+      ]);
+      const s = byKey(settings);
+      const synced = (hist?.runs?.length ?? 0) > 0;
+      const items = checklist(s, g, { previewed: !!pv?.preview || synced, synced });
+      const next = items.find((it) => !it.ok);
+      const cards = [lastSyncCard(sv)];
 
-    const setup = h(
-      'section',
-      { class: 'card', 'aria-labelledby': 'h-setup' },
-      h('h2', { id: 'h-setup', text: 'Setup' }),
-    );
-    if (next) {
-      setup.append(
-        banner(
-          'info',
-          `Next: ${next.title.toLowerCase()}`,
-          next.text,
-          h('a', { class: 'btn btn-filled', href: next.to }, 'Go there'),
-        ),
+      const setup = h(
+        'section',
+        { class: 'card', 'aria-labelledby': 'h-setup' },
+        h('h2', { id: 'h-setup', text: 'Setup' }),
       );
-    } else {
-      setup.append(
-        banner(
-          'ok',
-          'Everything is set up',
-          'The calendar is kept up to date by the scheduled sync.',
-        ),
-      );
-    }
-    const list = h('ol', { class: 'list' });
-    for (const [n, it] of items.entries()) {
-      list.append(
-        h(
-          'li',
-          { class: 'list-item' },
-          it.ok ? chip('ok', 'Done') : chip('warn', 'To do'),
-          h(
-            'div',
-            { class: 'grow' },
-            h('span', { class: 't-label', text: `${n + 1}. ${it.title}` }),
-            h('span', { class: 'muted t-small', text: it.text }),
+      if (next) {
+        setup.append(
+          banner(
+            'info',
+            `Next: ${next.title.toLowerCase()}`,
+            next.text,
+            h('a', { class: 'btn btn-filled', href: next.to }, 'Go there'),
           ),
-          h('a', { class: 'btn btn-text', href: it.to }, 'Open'),
-        ),
-      );
+        );
+      } else {
+        setup.append(
+          banner(
+            'ok',
+            'Everything is set up',
+            'The calendar is kept up to date by the scheduled sync.',
+          ),
+        );
+      }
+      const list = h('ol', { class: 'list' });
+      for (const [n, it] of items.entries()) {
+        list.append(
+          h(
+            'li',
+            { class: 'list-item' },
+            it.ok ? chip('ok', 'Done') : chip('warn', 'To do'),
+            h(
+              'div',
+              { class: 'grow' },
+              h('span', { class: 't-label', text: `${n + 1}. ${it.title}` }),
+              h('span', { class: 'muted t-small', text: it.text }),
+            ),
+            h('a', { class: 'btn btn-text', href: it.to }, 'Open'),
+          ),
+        );
+      }
+      setup.append(list);
+      cards.push(setup);
+      body.replaceChildren(...cards);
+    } catch (err) {
+      if (!background) body.replaceChildren(errorBanner(err));
     }
-    setup.append(list);
-    cards.push(setup);
-
-    body.replaceChildren(...cards);
-    page.append(
-      h('a', { class: 'btn btn-filled fab', href: '#/preview' }, icon('preview'), 'Preview a sync'),
-    );
-  } catch (err) {
-    body.replaceChildren(errorBanner(err));
   }
+
+  await load(false);
+  page.append(
+    h('a', { class: 'btn btn-filled fab', href: '#/preview' }, icon('preview'), 'Preview a sync'),
+  );
+  onTopic(['service', 'sync', 'google', 'settings', 'preview'], page, () => load(true));
   return page;
 }

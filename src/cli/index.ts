@@ -287,23 +287,29 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
   ensureDataDir(config.dataDir);
   const logger = createLogger(config.logLevel, io.logStream);
   const heartbeat = new HeartbeatStore(config.dataDir);
+  // Settings saved by the web UI (sources, login, squads, the interval and the on/off switch) apply from the next
+  // run, or at once for the schedule. A settings file that became invalid keeps the previous settings.
+  let live = config;
+  const reload = (): void => {
+    try {
+      live = loadConfigFromDisk(env);
+    } catch (err) {
+      logger.warn(
+        { code: toUserError(err).code },
+        'settings could not be reloaded; using the previous ones',
+      );
+    }
+  };
+  const listeners = new Set<() => void>();
   const loop = new ServeLoop({
     heartbeat,
-    intervalMinutes: config.syncIntervalMinutes,
+    intervalMinutes: () => live.syncIntervalMinutes,
+    enabled: () => live.syncAuto,
+    onChange: () => listeners.forEach((l) => l()),
     logger,
     ...(deps.now ? { now: deps.now } : {}),
     runOnce: async () => {
-      // Settings saved by the web UI (sources, login, squads) apply from the next run; the interval and the
-      // status port need a restart. A settings file that became invalid keeps the previous settings.
-      let live = config;
-      try {
-        live = loadConfigFromDisk(env);
-      } catch (err) {
-        logger.warn(
-          { code: toUserError(err).code },
-          'settings could not be reloaded; using the previous ones',
-        );
-      }
+      reload();
       const out = await runConfiguredSync(
         { config: live, logger, deps },
         { dryRun: false, force: false },
@@ -312,6 +318,14 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
       return { report: out.report, ...(warning ? { warning } : {}) };
     },
   });
+  const service = {
+    snapshot: () => loop.snapshot(),
+    settingsChanged: () => {
+      reload();
+      loop.poke();
+    },
+    onChange: (cb: () => void) => void listeners.add(cb),
+  };
 
   let statusServer: ReturnType<typeof createStatusServer> | undefined;
   let web: ReturnType<typeof createWebApp> | undefined;
@@ -326,6 +340,7 @@ async function serveCommand(env: NodeJS.ProcessEnv, io: CliIo, deps: CliDeps): P
           logger,
           allowedHosts: config.ui.allowedHosts,
           https: config.ui.https,
+          service,
         })
       : undefined;
     statusServer = createStatusServer(() => loop.snapshot(), {

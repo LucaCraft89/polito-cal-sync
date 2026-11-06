@@ -397,3 +397,98 @@ describe('serve command', () => {
     void writeFileSync;
   });
 });
+
+describe('serve loop: on/off switch and live interval', () => {
+  const quiet = createLogger('silent');
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+
+  it('idles while switched off, runs at once when switched on, and says so in the heartbeat', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'pcs-serve-'));
+    let on = false;
+    let runs = 0;
+    let changes = 0;
+    const loop = new ServeLoop({
+      heartbeat: new HeartbeatStore(d),
+      intervalMinutes: 60,
+      enabled: () => on,
+      onChange: () => changes++,
+      logger: quiet,
+      runOnce: () => {
+        runs++;
+        return Promise.resolve({});
+      },
+    });
+    const finished = loop.start();
+    await tick(40);
+    expect(runs).toBe(0);
+    expect(new HeartbeatStore(d).read()).toMatchObject({ autoSync: false });
+    expect(new HeartbeatStore(d).read()?.nextRunAt).toBeUndefined();
+    on = true;
+    loop.poke();
+    while (runs < 1) await tick();
+    await tick(20);
+    const hb = new HeartbeatStore(d).read();
+    expect(hb).toMatchObject({ autoSync: true, running: false, lastStatus: 'failed' }); // no report: not a success
+    expect(hb?.nextRunAt).toBeDefined();
+    expect(changes).toBeGreaterThan(2);
+    // Switched off again: the next run never comes, health is not "overdue".
+    on = false;
+    loop.poke();
+    await tick(20);
+    expect(new HeartbeatStore(d).read()?.autoSync).toBe(false);
+    expect(runs).toBe(1);
+    await loop.stop(500);
+    await finished;
+  });
+
+  it('a changed interval applies at once (the wait is planned again), also a longer one', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'pcs-serve-'));
+    let minutes = 600; // ten hours
+    let runs = 0;
+    const loop = new ServeLoop({
+      heartbeat: new HeartbeatStore(d),
+      intervalMinutes: () => minutes,
+      logger: quiet,
+      runOnce: () => {
+        runs++;
+        return Promise.resolve({});
+      },
+    });
+    const finished = loop.start();
+    while (runs < 1) await tick();
+    await tick(20);
+    expect(runs).toBe(1);
+    const next = Date.parse(new HeartbeatStore(d).read()?.nextRunAt ?? '');
+    expect(next - Date.now()).toBeGreaterThan(9 * 3_600_000);
+    minutes = 0.0002; // 12 ms, last run ended long enough ago
+    loop.poke();
+    while (runs < 2) await tick();
+    expect(new HeartbeatStore(d).read()?.intervalMinutes).toBeDefined();
+    minutes = 600; // and back: no further run
+    loop.poke();
+    await tick(40);
+    const after = runs;
+    await tick(40);
+    expect(runs).toBe(after);
+    await loop.stop(500);
+    await finished;
+  });
+});
+
+describe('health while paused', () => {
+  it('a loop switched off on purpose is healthy however old the last run is', () => {
+    const t0 = new Date('2026-11-04T10:00:00Z');
+    const hb = {
+      version: '0',
+      pid: 1,
+      startedAt: t0.toISOString(),
+      intervalMinutes: 60,
+      autoSync: false,
+    };
+    expect(evaluateHealth(hb, new Date(t0.getTime() + 30 * 24 * 3_600_000)).healthy).toBe(true);
+    expect(
+      evaluateHealth({ ...hb, autoSync: true }, new Date(t0.getTime() + 30 * 24 * 3_600_000))
+        .healthy,
+    ).toBe(false);
+  });
+});

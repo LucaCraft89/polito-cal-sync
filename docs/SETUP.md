@@ -58,9 +58,17 @@ Open **Sources**. Each card has a **Test** button that checks it without saving 
 
 On **Preview**, press **Preview now**. It reads your sources and your calendar and **writes nothing**; it shows what would be added, changed and removed. When it looks right, press **Sync now** and confirm. If it would remove more than your limit (default 30%), you must type `remove N` first, because that usually means a source came back empty.
 
-After that the scheduled sync keeps the calendar up to date (every 60 minutes by default; change it under Settings, 15 to 1440). **History** shows every run.
+## 6. The service: keep it synced on its own
 
-## 6. Check the setup any time
+The service (`serve`, which is what the Docker container runs, and restarts by itself) syncs in the background, also when no page is open. Open **Service** to see it and control it:
+
+- **Status:** on and waiting, syncing now, paused, or needs attention, with the last run, the last success, the next run and the last problem in plain words.
+- **Schedule:** the switch "Keep my calendar up to date automatically" and **Sync every (hours)** (for example 1, 2, 6, 12, 24; the shortest is 0.25). Saving applies at once: the next run is planned again, it is not necessary to restart anything. Switching it off pauses the service and it is not reported as a fault.
+- **History:** every run, newest first, with counts and errors. The paused-login state and the "I fixed the credentials" button are here too.
+
+A scheduled run writes only inside the dedicated calendar and obeys the deletion limit (30% by default) without ever forcing it: if a source suddenly loses more than that, the run is refused and waits for you (Preview, then Sync now with its typed confirmation). The service also makes one run when it starts. If you press **Sync now** at the moment a scheduled run is working, you get "Another sync is running": wait a minute and try again. The pages update by themselves (no refresh needed) while the service works.
+
+## 7. Check the setup any time
 
 ```bash
 pnpm run doctor

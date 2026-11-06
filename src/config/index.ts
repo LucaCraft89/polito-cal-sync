@@ -73,6 +73,13 @@ const envSchema = z.object({
       .default('false')
       .transform((v) => v === 'true'),
   ),
+  SYNC_AUTO: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(['true', 'false'], 'must be true or false')
+      .default('true')
+      .transform((v) => v === 'true'),
+  ),
   SOURCE_MOODLE_ENABLED: z.preprocess(
     emptyToUndefined,
     z
@@ -178,6 +185,8 @@ export interface Config {
   tz: string;
   dataDir: string;
   syncIntervalMinutes: number;
+  /** The scheduled loop (`serve`) syncs by itself; false = it idles until switched on. */
+  syncAuto: boolean;
   deleteThreshold: number;
   logLevel: z.infer<typeof envSchema>['LOG_LEVEL'];
   google: {
@@ -275,6 +284,7 @@ export function loadConfig(
     tz: v.TZ,
     dataDir: resolve(v.DATA_DIR),
     syncIntervalMinutes: v.SYNC_INTERVAL_MINUTES,
+    syncAuto: v.SYNC_AUTO,
     deleteThreshold: v.DELETE_THRESHOLD,
     logLevel: v.LOG_LEVEL,
     google,

@@ -1,0 +1,14 @@
+# 037 Live updates: server-sent events, not WebSockets
+
+**Context.** The owner saw that the pages needed a manual refresh to show a finished sync, a scheduled run or a preview made elsewhere, and suggested WebSockets ("your call").
+
+**Decided: server-sent events** (`GET /api/events`, `src/web/events.ts`, `web/assets/live.js`).
+
+- The traffic is one way (server to page); every action stays an ordinary POST with CSRF and Origin checks. SSE needs no new dependency (WebSockets would need a library or a hand-written framing layer on `node:http`), works with the existing cookie session, the Host allow-list and the strict CSP (`connect-src 'self'`), reconnects by itself, and works through the HTTPS proxy the owner may put in front. WebSockets add a second protocol and an Origin check of their own for nothing this UI needs.
+- **A message carries only a topic** (`sync`, `preview`, `google`, `service`, `settings`), never data. The page then reads what it shows from the normal authenticated endpoints. A stream can therefore never leak a title, an address or a token (a test checks it).
+- **Security.** Same checks as the API: Host allow-list (421), a valid session (401), GET only (405), at most 20 open streams (403), all security headers, `Cache-Control: no-store`. The stream **never keeps a session alive**: it checks the session every 25 s without refreshing it and sends `bye` when it has ended (logout, idle 30 minutes, 12 hours). The refreshes a page makes after an event carry `X-Pcs-Background: 1` and use `SessionStore.peek` (no idle refresh), so a tab left open does not stay logged in for ever. Tested with the injected clock.
+- **Emitters:** preview finished or invalidated, a sync from the page started or finished, the Google sign-in state, settings saved, and the scheduled loop (every start and end of a run). A scheduled run that changed the calendar also invalidates the current preview (it described the calendar before that run); a run that changed nothing does not.
+- **Page side:** `onTopic(topics, anchor, fn)` debounces 250 ms and drops handlers whose page is gone. Overview, Service, Courses, Preview and the Google card refresh themselves; a form being edited is never rebuilt under the person. After a reconnect every page looks again (something may have changed while the stream was down). Without `EventSource`, or when the stream is down, the pages still work: they load when opened and the long actions (sync, sign-in) still poll while they run.
+- **Not done:** per-event payloads, resuming missed events, push to other devices.
+
+**Verified how.** `test/web-live.test.ts` (auth, Host, headers, each topic, no data on the wire, `bye` after logout and after idle, idle not refreshed by pings or background reads, 20-stream cap) and a Playwright test where the page updates when the service state changes and when another session makes a preview.

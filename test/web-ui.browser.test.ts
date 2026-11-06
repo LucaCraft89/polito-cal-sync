@@ -32,7 +32,7 @@ const VIEWPORTS = [
   { name: '768x1024', width: 768, height: 1024 },
   { name: '1280x800', width: 1280, height: 800 },
 ] as const;
-const ROUTES = ['overview', 'preview', 'sources', 'courses', 'history', 'settings'] as const;
+const ROUTES = ['overview', 'preview', 'sources', 'courses', 'service', 'settings'] as const;
 const XSS_TITLE = '<img src=x onerror="window.__xss=1">';
 
 interface Watch {
@@ -972,6 +972,102 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
       expect(w.problems).toEqual([]);
     } finally {
       await h8.close();
+    }
+  });
+
+  it('Service: the schedule is saved in hours; pages update by themselves when something happens elsewhere', async () => {
+    let hb: Record<string, unknown> = {
+      version: '0',
+      pid: 1,
+      startedAt: '2026-11-06T08:00:00.000Z',
+      intervalMinutes: 120,
+      autoSync: true,
+      lastRunAt: '2026-11-06T09:00:00.000Z',
+      lastOkAt: '2026-11-06T09:00:00.000Z',
+      lastStatus: 'ok',
+      nextRunAt: '2026-11-06T11:00:00.000Z',
+      lastCounts: { created: 1, patched: 0, deleted: 0, unchanged: 3, failed: 0 },
+    };
+    const cbs: (() => void)[] = [];
+    let told = 0;
+    const set = (next: Record<string, unknown>) => {
+      hb = { ...hb, ...next };
+      cbs.forEach((c) => c());
+    };
+    const w9 = previewWorld();
+    const h9 = await startHarness({
+      env: { TZ: 'Europe/Rome' },
+      app: {
+        runDeps: w9.deps,
+        previewMinIntervalMs: 0,
+        service: {
+          snapshot: () => hb as never,
+          settingsChanged: () => void told++,
+          onChange: (cb) => void cbs.push(cb),
+        },
+      },
+    });
+    try {
+      new SettingsStore(h9.dataDir).apply({ set: { icsUrls: [FEED] } }, {});
+      const { page, w } = await newPage({ width: 390, height: 844 });
+      const b9 = `http://localhost:${h9.port}`;
+      await page.goto(`${b9}/`);
+      await page.getByLabel('Passphrase', { exact: true }).fill(PASS);
+      await page.getByLabel('Type it again').fill(PASS);
+      await page.getByRole('button', { name: 'Set passphrase' }).click();
+      await page.goto(`${b9}/#/service`);
+      await waitPage(page, 'On, waiting for the next run');
+      await settle(page);
+      expect(await layoutProblems(page, 390)).toEqual([]);
+      expect(await axeProblems(page)).toEqual([]);
+
+      // The service starts a run: the page shows it without a reload. Then it is paused: same.
+      set({ running: true });
+      await waitPage(page, 'Syncing now');
+      set({ running: false, autoSync: false });
+      await waitPage(page, 'Paused');
+      set({ autoSync: true });
+      await waitPage(page, 'On, waiting for the next run');
+
+      // The Overview follows too (and a preview made in another session ticks the checklist).
+      await page.goto(`${b9}/#/overview`);
+      await waitPage(page, 'First preview');
+      expect(
+        await page.locator('.list-item', { hasText: 'First preview' }).getByText('To do').count(),
+      ).toBe(1);
+      set({ running: true });
+      await page.getByText('Syncing now').first().waitFor();
+      set({ running: false });
+      const other = await h9.login();
+      await h9.call('PUT', '/api/settings', {
+        body: { set: { 'google.clientId': 'x' } },
+        cookie: other.cookie,
+        headers: { 'X-CSRF-Token': other.csrf },
+      });
+      const pv = await h9.call('POST', '/api/preview', {
+        body: {},
+        cookie: other.cookie,
+        headers: { 'X-CSRF-Token': other.csrf },
+      });
+      expect(pv.status).toBe(200);
+      await page.locator('.list-item', { hasText: 'First preview' }).getByText('Done').waitFor();
+
+      // Save the schedule: hours in, minutes stored, the service is told at once.
+      await page.goto(`${b9}/#/service`);
+      await page.getByLabel('Sync every (hours)').fill('0.1');
+      await page.getByRole('button', { name: 'Save' }).click();
+      await waitPage(page, 'E_SETTING_INVALID');
+      await page.getByLabel('Sync every (hours)').fill('3');
+      await page.getByLabel('Keep my calendar up to date automatically').uncheck({ force: true });
+      await page.getByRole('button', { name: 'Save' }).click();
+      await page.locator('.snackbar').getByText('Saved').waitFor();
+      const saved = new SettingsStore(h9.dataDir).read();
+      expect(saved['syncIntervalMinutes']).toBe(180);
+      expect(saved['syncAuto']).toBe(false);
+      expect(told).toBe(2); // the Google client saved earlier from the other session, and this schedule
+      expect(w.problems).toEqual([]);
+    } finally {
+      await h9.close();
     }
   });
 });

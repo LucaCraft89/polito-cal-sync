@@ -163,6 +163,8 @@ export interface PreviewOptions {
   deps?: RuntimeDeps;
   now: () => number;
   minIntervalMs?: number;
+  /** Called when the preview or its state changed (the live updates). */
+  onChange?: () => void;
 }
 
 /**
@@ -194,6 +196,7 @@ export class PreviewService {
   invalidate(): void {
     this.last = undefined;
     this.lastStamp = undefined;
+    this.o.onChange?.();
   }
 
   private nextAllowed(): string | null {
@@ -247,6 +250,7 @@ export class PreviewService {
       return { preview: this.last, nextAllowedAt: this.nextAllowed() };
     } finally {
       this.running = false;
+      this.o.onChange?.();
     }
   }
 }

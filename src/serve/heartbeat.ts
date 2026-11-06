@@ -20,6 +20,10 @@ export interface Heartbeat {
     unchanged: number;
     failed: number;
   };
+  /** The loop syncs by itself (false = paused by the owner in the Service page or SYNC_AUTO=false). */
+  autoSync?: boolean;
+  /** A scheduled run is in progress right now. */
+  running?: boolean;
   /** Set on a clean shutdown. */
   stoppedAt?: string;
 }
@@ -60,6 +64,8 @@ const minutes = (ms: number) => Math.round(ms / 60_000);
 export function evaluateHealth(hb: Heartbeat | undefined, now: Date): Health {
   if (!hb) return { healthy: true };
   if (hb.stoppedAt) return { healthy: false, reason: 'the serve loop was stopped' };
+  // Paused on purpose: nothing is overdue.
+  if (hb.autoSync === false) return { healthy: true };
   const allowance = 3 * hb.intervalMinutes * 60_000;
   const age = (iso: string) => now.getTime() - Date.parse(iso);
   const lastRun = hb.lastRunAt ?? hb.startedAt;

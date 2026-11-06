@@ -59,6 +59,8 @@ export interface SyncOptions {
   deps?: RuntimeDeps;
   now: () => number;
   minIntervalMs?: number;
+  /** Called when the run started or ended (the live updates). */
+  onChange?: () => void;
 }
 
 const needsPreview = (why: string): UserError =>
@@ -172,6 +174,7 @@ export class SyncService {
       { forced, deletes: confirmedDeletes },
       'ui sync started on a confirmed preview',
     );
+    this.o.onChange?.();
     this.job = this.run(forced, confirmedDeletes).finally(() => {
       this.job = undefined;
     });
@@ -231,6 +234,7 @@ export class SyncService {
       deleted: result.deleted,
       ...(result.error ? { code: result.error.code } : {}),
     });
+    this.o.onChange?.();
   }
 }
 

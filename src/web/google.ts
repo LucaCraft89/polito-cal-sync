@@ -36,6 +36,8 @@ export interface GoogleOptions {
   deps?: GoogleDeps;
   /** How long the sign-in waits for the browser to come back. */
   connectTimeoutMs?: number;
+  /** Called when the sign-in state changed (the live updates). */
+  onChange?: () => void;
 }
 
 export interface ConnectView {
@@ -144,6 +146,7 @@ export class GoogleService {
             redirectPort: Number(new URL(redirectUri).port),
           };
           resolve(this.connect);
+          this.o.onChange?.();
         },
       })
         .then(async ({ tokens }) => {
@@ -152,12 +155,14 @@ export class GoogleService {
           await this.rememberAccount(creds);
           this.connect = { state: 'done' };
           this.o.audit.append('google.connected');
+          this.o.onChange?.();
         })
         .catch((err: unknown) => {
           const e = toUserError(err);
           this.connect = { state: 'failed', error: problem(e) };
           this.o.audit.append('google.connect.failed', { code: e.code });
           this.log.warn({ code: e.code }, 'google sign-in from the ui did not finish');
+          this.o.onChange?.();
           if (!announced) reject(e);
         })
         .finally(() => {
@@ -234,6 +239,7 @@ export class GoogleService {
     }
     this.o.audit.append('google.calendar', { action: chosen.action });
     this.log.info({ action: chosen.action }, 'ui chose the dedicated calendar');
+    this.o.onChange?.();
     return this.status();
   }
 }

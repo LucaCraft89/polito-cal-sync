@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { onTopic } from '../live.js';
 import { banner, button, chip, errorBanner, h, icon, loading, nextId, toast } from '../dom.js';
 
 const POLL_MS = 2000;
@@ -285,5 +286,8 @@ export function googleCard({ onChange } = {}) {
   }
 
   void refresh();
+  onTopic('google', card, () => {
+    if (!card.contains(document.activeElement)) void refresh();
+  });
   return card;
 }

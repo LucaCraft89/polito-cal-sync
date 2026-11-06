@@ -9,8 +9,18 @@ import { SettingsStore } from '../settings/store.js';
 import type { RuntimeDeps } from '../sync/run.js';
 import { UserError } from '../util/errors.js';
 import { PassphraseStore, LoginThrottle, SessionStore, type Session } from './auth.js';
-import { errorReply, parseCookies, readJsonBody, send, type Reply } from './http.js';
+import {
+  errorReply,
+  parseCookies,
+  readJsonBody,
+  send,
+  SECURITY_HEADERS,
+  type Reply,
+} from './http.js';
 import { SourceChecks } from './checks.js';
+import { EventBus } from './events.js';
+import { evaluateHealth, type Heartbeat } from '../serve/heartbeat.js';
+import { problemFromCode } from './history.js';
 import { coursesView, historyView, resumeLogin } from './history.js';
 import { GoogleService, type GoogleDeps } from './google.js';
 import { PreviewService } from './preview.js';
@@ -20,7 +30,18 @@ import { StaticFiles } from './static.js';
 export const SESSION_COOKIE = 'pcs_session';
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
+/** The scheduled loop of `serve`, as the web app sees it (absent in tests that run the app alone). */
+export interface ServiceControl {
+  snapshot(): Heartbeat;
+  /** The settings changed: read them again and plan the next run. */
+  settingsChanged(): void;
+  /** Called whenever the loop's state changed. */
+  onChange(cb: () => void): void;
+}
+
 export interface WebAppOptions {
+  /** The scheduled loop; without it the Service page says the loop is not available here. */
+  service?: ServiceControl;
   dataDir: string;
   /** The real environment (read each time, so a changed .env variable shows up as locked). */
   env: NodeJS.ProcessEnv;
@@ -35,6 +56,8 @@ export interface WebAppOptions {
   /** Replaces Google, the portal and the clock in the preview (tests only). */
   runDeps?: RuntimeDeps;
   previewMinIntervalMs?: number;
+  /** Seconds between keep-alive lines (and session checks) on an event stream; tests shorten it. */
+  streamBeatMs?: number;
   /** Not more often than this between two syncs started from the page (tests shorten it). */
   syncMinIntervalMs?: number;
   /** Replaces the Google sign-in and calendar list (tests only). */
@@ -159,6 +182,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
     return { cookie: cookie(id, 12 * 3600), csrf: session.csrf };
   };
 
+  const bus = new EventBus();
   const files = new StaticFiles(o.webRoot);
   const now = o.now ?? Date.now;
   const preview = new PreviewService({
@@ -167,6 +191,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
     settings,
     logger: o.logger,
     now,
+    onChange: () => bus.emit('preview'),
     ...(o.runDeps ? { deps: o.runDeps } : {}),
     ...(o.previewMinIntervalMs !== undefined ? { minIntervalMs: o.previewMinIntervalMs } : {}),
   });
@@ -179,6 +204,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
     preview,
     logger: o.logger,
     now,
+    onChange: () => bus.emit('sync'),
     ...(o.runDeps ? { deps: o.runDeps } : {}),
     ...(o.syncMinIntervalMs !== undefined ? { minIntervalMs: o.syncMinIntervalMs } : {}),
   });
@@ -196,11 +222,48 @@ export function createWebApp(o: WebAppOptions): WebApp {
     settings,
     audit,
     logger: o.logger,
+    onChange: () => bus.emit('google'),
     ...(o.google ? { deps: o.google } : {}),
     ...(o.googleConnectTimeoutMs !== undefined
       ? { connectTimeoutMs: o.googleConnectTimeoutMs }
       : {}),
   });
+
+  // The scheduled loop tells the page when it starts or ends a run; a run that changed the calendar also makes the
+  // current preview outdated (it described the calendar before that run).
+  let lastLoopRun = o.service?.snapshot().lastRunAt;
+  o.service?.onChange(() => {
+    const hb = o.service?.snapshot();
+    if (hb && hb.lastRunAt !== lastLoopRun) {
+      lastLoopRun = hb.lastRunAt;
+      const c = hb.lastCounts;
+      if (c && c.created + c.patched + c.deleted > 0) preview.invalidate();
+    }
+    bus.emit('service');
+  });
+
+  const serviceView = () => {
+    const hb = o.service?.snapshot();
+    if (!hb) return { available: false };
+    const config = loadConfig({ ...o.env, DATA_DIR: o.dataDir }, settings.read());
+    const health = evaluateHealth(hb, new Date(now()));
+    return {
+      available: true,
+      autoSync: hb.autoSync !== false,
+      intervalMinutes: hb.intervalMinutes,
+      running: hb.running === true,
+      healthy: health.healthy,
+      ...(health.reason ? { reason: health.reason } : {}),
+      ...(hb.lastRunAt ? { lastRunAt: hb.lastRunAt } : {}),
+      ...(hb.lastOkAt ? { lastOkAt: hb.lastOkAt } : {}),
+      ...(hb.lastStatus ? { lastStatus: hb.lastStatus } : {}),
+      ...(hb.nextRunAt ? { nextRunAt: hb.nextRunAt } : {}),
+      ...(hb.lastCounts ? { lastCounts: hb.lastCounts } : {}),
+      ...(hb.lastErrorCode ? { error: problemFromCode(hb.lastErrorCode) } : {}),
+      /** The deletion limit every scheduled run obeys (it never forces). */
+      deleteThreshold: config.deleteThreshold,
+    };
+  };
 
   /** Applies "add / remove a feed" to the saved list, so the browser never needs the addresses. */
   const feedChange = (
@@ -365,6 +428,10 @@ export function createWebApp(o: WebAppOptions): WebApp {
         const change = feedChange(parseBody(settingsBody, c.body));
         const changed = settings.apply(change, o.env);
         log.info({ changed }, 'ui settings saved');
+        if (changed.length > 0) {
+          o.service?.settingsChanged();
+          bus.emit('settings');
+        }
         const values = settings.read();
         const config = loadConfig(o.env, values);
         return {
@@ -386,6 +453,13 @@ export function createWebApp(o: WebAppOptions): WebApp {
       auth: true,
       json: true,
       run: async () => ({ status: 200, body: await preview.run() }),
+    },
+    {
+      method: 'GET',
+      path: '/api/service',
+      auth: true,
+      json: false,
+      run: () => ({ status: 200, body: serviceView() }),
     },
     {
       method: 'GET',
@@ -582,6 +656,82 @@ export function createWebApp(o: WebAppOptions): WebApp {
     }
   }
 
+  const streams = new Set<ServerResponse>();
+  const MAX_STREAMS = 20;
+
+  /**
+   * Server-sent events: `GET /api/events`, one stream per open page. It carries only "topic changed" messages; the
+   * page then reads the data from the normal (authenticated) endpoints. Same checks as the API: Host allow-list,
+   * a session. The stream never keeps the session alive, it ends when the session ends, and there are at most
+   * MAX_STREAMS open at once.
+   */
+  function stream(req: IncomingMessage, res: ServerResponse): void {
+    const fail = (err: UserError, extra: Record<string, string> = {}): void => {
+      req.resume();
+      send(res, errorReply(err, { Connection: 'close', ...extra }));
+    };
+    if (!allowed.has(hostName(req))) return fail(hostRefused());
+    if (req.method !== 'GET') {
+      return fail(
+        new UserError({
+          code: 'E_UI_REQUEST_REFUSED',
+          what: `The request was refused: ${String(req.method).slice(0, 10)} is not allowed here.`,
+          why: 'This address answers GET only.',
+          action: 'Use the right method.',
+          status: 405,
+        }),
+      );
+    }
+    const id = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    if (!sessions.get(id)) {
+      return fail(
+        new UserError({
+          code: 'E_UI_AUTH_REQUIRED',
+          what: 'You are not logged in.',
+          why: 'There is no session, or it expired.',
+          action: 'Log in with your passphrase.',
+        }),
+      );
+    }
+    if (streams.size >= MAX_STREAMS) {
+      return fail(
+        refused(
+          'Too many live pages are open.',
+          `At most ${MAX_STREAMS} at once.`,
+          'Close some tabs of this page and reload.',
+        ),
+      );
+    }
+    res.writeHead(200, {
+      ...SECURITY_HEADERS,
+      ...(o.https ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}),
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 3000\nevent: hello\ndata: {}\n\n');
+    streams.add(res);
+    const unsubscribe = bus.subscribe((topic) => {
+      res.write(`data: ${JSON.stringify({ topic })}\n\n`);
+    });
+    const beat = setInterval(() => {
+      if (!sessions.peek(id)) {
+        res.write('event: bye\ndata: {}\n\n');
+        res.end();
+        return;
+      }
+      res.write(': ping\n\n');
+    }, o.streamBeatMs ?? 25_000);
+    beat.unref();
+    const done = (): void => {
+      clearInterval(beat);
+      unsubscribe();
+      streams.delete(res);
+    };
+    res.on('close', done);
+  }
+
   async function dispatch(
     req: IncomingMessage,
     path: string,
@@ -611,7 +761,9 @@ export function createWebApp(o: WebAppOptions): WebApp {
     }
     if (route.method !== 'GET') checkOrigin(req);
     const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-    const session = sessions.get(sessionId);
+    // A refresh that the page makes by itself (after a pushed event) must not keep the session alive.
+    const background = route.method === 'GET' && req.headers['x-pcs-background'] === '1';
+    const session = background ? sessions.peek(sessionId) : sessions.get(sessionId);
     if (route.auth) {
       if (!session) {
         req.resume();
@@ -648,6 +800,10 @@ export function createWebApp(o: WebAppOptions): WebApp {
           return true;
         }
         return files.serve(req, res, url.pathname);
+      }
+      if (url.pathname === '/api/events') {
+        stream(req, res);
+        return true;
       }
       const hsts: Record<string, string> = o.https
         ? { 'Strict-Transport-Security': 'max-age=31536000' }

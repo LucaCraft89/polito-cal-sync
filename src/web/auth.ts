@@ -205,6 +205,20 @@ export class SessionStore {
     return s;
   }
 
+  /** Like `get`, but never refreshes the idle timer: for background pushes and refreshes, which must not keep a session alive. */
+  peek(id: string | undefined): Session | undefined {
+    if (!id) return undefined;
+    const k = this.key(id);
+    const s = this.sessions.get(k);
+    if (!s) return undefined;
+    const t = this.now();
+    if (t - s.lastSeen > this.idleMs || t - s.createdAt > this.absoluteMs) {
+      this.sessions.delete(k);
+      return undefined;
+    }
+    return s;
+  }
+
   destroy(id: string | undefined): void {
     if (id) this.sessions.delete(this.key(id));
   }
