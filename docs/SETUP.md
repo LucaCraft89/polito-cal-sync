@@ -19,7 +19,7 @@ pnpm install
 UI_ENABLED=true pnpm serve
 ```
 
-With Docker the web page is on by default (a `.env` file is optional: everything can be set in the page). Then open **http://localhost:8787**. The page is only reachable from the machine it runs on.
+With Docker the web page is on by default (a `.env` file is optional: everything can be set in the page). Then open **http://localhost:8787**. By default the page is only reachable from the machine it runs on. To reach it from other devices (a home server), copy `.env.example` to `.env`: it sets `BIND_ADDRESS=0.0.0.0`, and the page then answers at `http://<server IP>:8787`. Choosing the passphrase and connecting Google (section 3) are done once on the server itself (or through an SSH tunnel of ports 8787 and 8789), because Google sends the browser back to `127.0.0.1`. The page has no HTTPS: use a trusted network or a VPN, or your own TLS proxy (`UI_HTTPS=true`, names in `UI_ALLOWED_HOSTS`).
 
 The first time, the page asks you to choose a **passphrase** (12 characters or more). It protects the page, because the page can change what is written to your calendar and holds your university login. If you forget it: `pnpm reset-ui-passphrase` (or the same command inside the container) on that machine.
 

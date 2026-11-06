@@ -294,6 +294,42 @@ describe('request safety', () => {
     expect(r.status).toBe(200);
   });
 
+  it("Host: the server's IP address is answered (a name is needed for rebinding), but the first-run setup still needs localhost", async () => {
+    h = await startHarness();
+    const a = await h.setup(); // through localhost
+    for (const host of ['192.168.1.20:8787', '10.0.0.5', '[fd00::5]:8787']) {
+      expect((await h.call('GET', '/api/session', { headers: { Host: host } })).status, host).toBe(
+        200,
+      );
+      expect((await h.call('GET', '/', { headers: { Host: host } })).status, `${host} page`).toBe(
+        200,
+      );
+    }
+    // A login and a change work through the IP, with the Origin of that address.
+    const login = await h.call('POST', '/api/login', {
+      body: { passphrase: PASS },
+      headers: { Host: '192.168.1.20:8787', Origin: 'http://192.168.1.20:8787' },
+    });
+    expect(login.status).toBe(200);
+    // Names that merely contain an address are still refused.
+    for (const host of ['192.168.1.20.evil.example', 'evil-192.168.1.20', '192.168.1.20.nip.io']) {
+      expectError(
+        await h.call('GET', '/api/session', { headers: { Host: host } }),
+        421,
+        'E_UI_HOST_REFUSED',
+      );
+    }
+    // The first-run step (choosing the passphrase) is only through localhost, whatever the bind address.
+    await h.close();
+    h = await startHarness();
+    const setup = await h.call('POST', '/api/setup', {
+      body: { passphrase: PASS },
+      headers: { Host: '192.168.1.20:8787', Origin: 'http://192.168.1.20:8787' },
+    });
+    expectError(setup, 421, 'E_UI_HOST_REFUSED');
+    void a;
+  });
+
   it('a request with no Host header at all is refused too', async () => {
     h = await startHarness();
     const answer = await new Promise<string>((resolve, reject) => {

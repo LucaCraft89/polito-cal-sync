@@ -17,9 +17,10 @@ services:
       # The web page is the setup path; it is reachable from this machine only (see the ports below).
       UI_ENABLED: ${UI_ENABLED:-true}
     ports:
-      # Local only: the wizard and status page must never be reachable from the network.
-      - '127.0.0.1:8787:8787'
+      # BIND_ADDRESS: 127.0.0.1 = this machine only (the default here); 0.0.0.0 = every device on your network.
+      - '${BIND_ADDRESS:-127.0.0.1}:8787:8787'
       # The UI's "Connect Google" waits here for Google to send the browser back (open only during a sign-in).
+      # Always this machine only: Google sends the browser to 127.0.0.1, so connect Google from the server itself.
       - '127.0.0.1:8789:8789'
     volumes:
       - polito-cal-sync-data:/data

@@ -31,6 +31,13 @@ import { StaticFiles } from './static.js';
 export const SESSION_COOKIE = 'pcs_session';
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
+/**
+ * A Host that is an IP address, not a name: `192.168.1.20` or `[fd00::5]`. DNS rebinding needs a NAME the attacker
+ * controls, so an IP in the Host header (the person typed the server's address) is safe to answer. Names other than
+ * localhost still need UI_ALLOWED_HOSTS.
+ */
+const IP_HOST = /^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\])$/i;
+
 /** The scheduled loop of `serve`, as the web app sees it (absent in tests that run the app alone). */
 export interface ServiceControl {
   snapshot(): Heartbeat;
@@ -615,9 +622,9 @@ export function createWebApp(o: WebAppOptions): WebApp {
     new UserError({
       code: 'E_UI_HOST_REFUSED',
       what: 'This address is not allowed.',
-      why: 'The Host header is not localhost. This stops web pages from reaching the UI through your browser (DNS rebinding).',
+      why: 'The address is a name other than localhost. This stops web pages from reaching the UI through your browser (DNS rebinding).',
       action:
-        'Open the UI as http://localhost:<port>. To use another name, add it to UI_ALLOWED_HOSTS.',
+        "Open the UI by the server's IP address (http://192.168.1.20:8787) or as http://localhost:<port>. To use a name, add it to UI_ALLOWED_HOSTS.",
     });
   const setupFirst = () =>
     new UserError({
@@ -634,6 +641,11 @@ export function createWebApp(o: WebAppOptions): WebApp {
       action: `Wait ${wait} second${wait === 1 ? '' : 's'}, then type the passphrase carefully.`,
       status: 429,
     });
+
+  function hostAllowed(req: IncomingMessage): boolean {
+    const host = hostName(req);
+    return allowed.has(host) || IP_HOST.test(host);
+  }
 
   function hostName(req: IncomingMessage): string {
     return (req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase();
@@ -683,7 +695,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
       req.resume();
       send(res, errorReply(err, { Connection: 'close', ...extra }));
     };
-    if (!allowed.has(hostName(req))) return fail(hostRefused());
+    if (!hostAllowed(req)) return fail(hostRefused());
     if (req.method !== 'GET') {
       return fail(
         new UserError({
@@ -750,7 +762,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
     path: string,
     query: URLSearchParams,
   ): Promise<Reply> {
-    if (!allowed.has(hostName(req))) throw hostRefused();
+    if (!hostAllowed(req)) throw hostRefused();
     const matches = routes.filter((r) => r.path === path);
     if (matches.length === 0) {
       throw new UserError({
@@ -808,7 +820,7 @@ export function createWebApp(o: WebAppOptions): WebApp {
       if (!url.pathname.startsWith('/api/')) {
         // The UI files. Unknown paths fall through to the status page.
         if (!files.has(url.pathname)) return false;
-        if (!allowed.has(hostName(req))) {
+        if (!hostAllowed(req)) {
           send(res, errorReply(hostRefused()));
           return true;
         }

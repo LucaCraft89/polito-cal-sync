@@ -45,7 +45,7 @@ cd polito-cal-sync
 docker compose up -d
 ```
 
-Then open **<http://localhost:8787>**. It is reachable from your machine only.
+Then open **<http://localhost:8787>**. By default only this machine can reach it; to open it to your network see [running it on a server](#running-it-on-a-server).
 
 1. **Choose a passphrase.** It protects the page, because the page can change your calendar and holds your university login.
 2. **Create a Google client** (once, [about ten minutes](docs/SETUP.md#2-create-the-google-client-about-10-minutes-once)): in the Google Cloud console enable the Calendar API, create an OAuth client of type _Desktop app_ and **publish the app** ("In production"; in "Testing" mode Google ends the login after 7 days). Paste the client id and secret in **Settings**.
@@ -68,6 +68,20 @@ UI_ENABLED=true pnpm serve      # then open http://localhost:8787
 Data (logins, settings, history) lives in `./data`, private to your user. Run `pnpm run doctor` any time to check the setup (`pnpm doctor` without `run` is a pnpm built-in and does nothing useful).
 
 </details>
+
+### Running it on a server
+
+For a home server or a Raspberry Pi that other devices should reach, copy the example settings first. It switches the page on and publishes it on every interface:
+
+```bash
+cp .env.example .env        # UI_ENABLED=true and BIND_ADDRESS=0.0.0.0 are already set
+docker compose up -d
+```
+
+- Open `http://<server IP>:8787` from your phone or laptop (an IP address needs no extra setting; a DNS name must be added to `UI_ALLOWED_HOSTS`).
+- **First run:** choosing the passphrase and **connecting Google** must be done on the server itself (`http://localhost:8787`; over SSH: `ssh -L 8787:localhost:8787 -L 8789:localhost:8789 server`), because Google sends the browser back to `127.0.0.1`. After that, any device on your network can use the page.
+- The page has a passphrase, login throttling and session protection, but **no HTTPS**. Use a trusted network or a VPN, or put your own TLS reverse proxy in front (`UI_HTTPS=true`). To keep it to the server only, set `BIND_ADDRESS=127.0.0.1`.
+- Only the infrastructure settings are active in `.env.example`; everything else is commented out so the web page stays in control (a variable that is set in `.env` wins over the page and locks its field).
 
 ## Using it
 
