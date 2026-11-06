@@ -88,7 +88,7 @@ The UI can change what is written to a calendar and holds a university password.
 
 First run (wizard, resumable): 1 passphrase, 2 Google client, 3 connect and calendar, 4 sources (each with **Test**), 5 preview, 6 schedule and finish. Afterwards the app has five destinations: **Overview** (health, last run, next run, the main action), **Preview**, **Sources**, **Courses** (squads, names, later per-course calendars), **History and logs**. Settings overview is under Sources; passphrase and theme under a profile menu.
 
-The squad picker is fed by the last preview (it knows the course ids and squads seen), so a student chooses "Chimica: squad A" from a list instead of writing `309885=A`.
+The squad picker is fed by the last preview (it knows the course ids and squads seen), so a student chooses "Chimica: squad A" from a list instead of writing `222222=A`.
 
 ## 6. Architecture
 

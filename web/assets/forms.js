@@ -212,7 +212,8 @@ export function squadsField({ view, current, choices }) {
       }),
     );
   }
-  el.append(lockedNote(view));
+  const locked = lockedNote(view);
+  if (locked) el.append(locked);
   const read = () => {
     const next = { ...current };
     for (const g of groups) {
@@ -269,7 +270,8 @@ export function moodleCoursesField({ view, excluded, courses }) {
       }),
     );
   }
-  el.append(lockedNote(view));
+  const locked = lockedNote(view);
+  if (locked) el.append(locked);
   const shown = new Set(courses.map((c) => c.courseId));
   const read = () => [
     ...excluded.filter((id) => !shown.has(id)),

@@ -274,6 +274,10 @@ describe.skipIf(!browser)('web UI in a real browser', () => {
           .getAttribute('aria-label');
         const text = label ?? (await page.locator(`${current}[aria-current="page"]`).textContent());
         expect(text?.toLowerCase(), route).toContain(route);
+        // A missing value must never be printed as text (a null passed to a native append shows as "null").
+        expect(await page.locator('main').innerText(), `${route} text`).not.toMatch(
+          /\b(null|undefined)\b/,
+        );
         expect(await layoutProblems(page, vp.width), `${route} layout`).toEqual([]);
         expect(await axeProblems(page), `${route} axe (light)`).toEqual([]);
         if (vp.width === 1280 || vp.width === 360) {

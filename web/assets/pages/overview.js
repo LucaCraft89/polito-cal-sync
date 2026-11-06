@@ -150,7 +150,7 @@ function lastSyncCard(sv) {
           )
         : null,
     ),
-    sv.healthy ? null : banner('warn', 'The sync loop needs attention', sv.reason ?? ''),
+    ...(sv.healthy ? [] : [banner('warn', 'The sync loop needs attention', sv.reason ?? '')]),
     h('a', { class: 'btn btn-text', href: '#/service' }, 'Schedule and history'),
   );
   return run;

@@ -91,8 +91,8 @@ describe('config', () => {
 describe('POLITO_SQUADS', () => {
   it('parses course=squad pairs, upper-cases, allows several squads per course', async () => {
     const { loadConfig } = await import('../src/config/index.js');
-    const c = loadConfig({ POLITO_SQUADS: ' 309885=b , 309742=2,309742=3 ' });
-    expect(c.polito.squads).toEqual({ '309885': ['B'], '309742': ['2', '3'] });
+    const c = loadConfig({ POLITO_SQUADS: ' 222222=b , 333333=2,333333=3 ' });
+    expect(c.polito.squads).toEqual({ '222222': ['B'], '333333': ['2', '3'] });
     expect(loadConfig({}).polito.squads).toEqual({});
   });
   it('rejects a malformed value naming the variable, not the value', async () => {

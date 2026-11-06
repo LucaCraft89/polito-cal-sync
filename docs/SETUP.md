@@ -19,7 +19,7 @@ pnpm install
 UI_ENABLED=true pnpm serve
 ```
 
-With Docker, add `UI_ENABLED=true` to a `.env` file next to `docker-compose.yml` first (copy `.env.example`). Then open **http://localhost:8787**. The page is only reachable from the machine it runs on.
+With Docker the web page is on by default (a `.env` file is optional: everything can be set in the page). Then open **http://localhost:8787**. The page is only reachable from the machine it runs on.
 
 The first time, the page asks you to choose a **passphrase** (12 characters or more). It protects the page, because the page can change what is written to your calendar and holds your university login. If you forget it: `pnpm reset-ui-passphrase` (or the same command inside the container) on that machine.
 

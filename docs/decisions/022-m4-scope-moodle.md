@@ -10,7 +10,7 @@
 **Decided: M4 is small and has three parts**
 
 1. **Friendly errors for Moodle feeds.** A refused (`E_ICS_FEED_REJECTED`) or unreadable (`E_ICS_FEED_INVALID`) feed on the Moodle host now says how to export the link again (stock Moodle menu names, Italian label too) and keeps the "nothing was deleted" line. The text says "usually": **what Moodle really answers to a stale token is UNVERIFIED** (the status/body handling is the generic one that already covered 401/403/404/410 and HTML pages).
-2. **Course names in `--details`.** `course Analisi (polito:309865)` instead of the bare key, from `PolitoPortalSource.courseNames`. This is what the squad setting and, later, the Courses page need.
+2. **Course names in `--details`.** `course Analisi (polito:111111)` instead of the bare key, from `PolitoPortalSource.courseNames`. This is what the squad setting and, later, the Courses page need.
 3. **Not built, on purpose:**
    - **Telling Moodle deadlines ("... apre/chiude") from other events.** The only signal would be the Italian wording of the title, which is a language-dependent guess; AGENTS.md forbids guessing. Needs a sanitized sample of the owner's Moodle titles (kinds of suffixes and counts, no course names) first. If it is wanted, it becomes an opt-in setting, never a default.
    - **Per-course calendars (decision 013).** Real work (two-phase run, moves, per-calendar thresholds, calendar creation limits) and needs the Courses page to be usable. Moved to M5 step 4, after the UI exists.

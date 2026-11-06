@@ -125,7 +125,7 @@ const envSchema = z.object({
       .string()
       .regex(
         /^\s*[\w-]+\s*=\s*[\w-]+(?:\s*,\s*[\w-]+\s*=\s*[\w-]+)*\s*$/,
-        'must look like 309885=B,309742=2 (course id = squad, comma separated)',
+        'must look like 222222=B,333333=2 (course id = squad, comma separated)',
       )
       .optional(),
   ),

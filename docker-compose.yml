@@ -1,5 +1,4 @@
-# First time: follow docs/M2-RUNBOOK.md (auth google, then `docker compose up -d`).
-# http://localhost:8787/status shows the last sync (the wizard arrives in M5).
+# First time: `docker compose up -d`, then open http://localhost:8787 (docs/SETUP.md walks through the rest).
 services:
   polito-cal-sync:
     build: .
@@ -15,6 +14,8 @@ services:
         required: false
     environment:
       TZ: ${TZ:-Europe/Rome}
+      # The web page is the setup path; it is reachable from this machine only (see the ports below).
+      UI_ENABLED: ${UI_ENABLED:-true}
     ports:
       # Local only: the wizard and status page must never be reachable from the network.
       - '127.0.0.1:8787:8787'
