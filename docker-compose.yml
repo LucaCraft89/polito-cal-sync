@@ -1,0 +1,35 @@
+# First time: `docker compose up -d`, then open http://localhost:8787 (docs/SETUP.md walks through the rest).
+services:
+  polito-cal-sync:
+    build: .
+    image: polito-cal-sync:local
+    container_name: polito-cal-sync
+    # `serve` keeps running even when a sync fails (it logs why and retries at the next interval),
+    # so restarts only happen after a crash or an invalid .env.
+    restart: unless-stopped
+    # Lets a sync in progress finish after SIGTERM (docker stop).
+    stop_grace_period: 30s
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Europe/Rome}
+      # The web page is the setup path; it is reachable from this machine only (see the ports below).
+      UI_ENABLED: ${UI_ENABLED:-true}
+    ports:
+      # BIND_ADDRESS: 127.0.0.1 = this machine only (the default here); 0.0.0.0 = every device on your network.
+      - '${BIND_ADDRESS:-127.0.0.1}:8787:8787'
+      # The UI's "Connect Google" waits here for Google to send the browser back (open only during a sign-in).
+      # Always this machine only: Google sends the browser to 127.0.0.1, so connect Google from the server itself.
+      - '127.0.0.1:8789:8789'
+    volumes:
+      - polito-cal-sync-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  polito-cal-sync-data:

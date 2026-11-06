@@ -1,0 +1,58 @@
+{
+  "name": "polito-cal-sync",
+  "version": "0.1.0",
+  "description": "Self-hosted sync of a Politecnico di Torino student's schedule into a dedicated Google Calendar. Unofficial.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/main.ts serve",
+    "sync": "tsx src/main.ts sync",
+    "auth": "tsx src/main.ts auth",
+    "verify-google": "tsx src/main.ts verify-google",
+    "serve": "tsx src/main.ts serve",
+    "doctor": "tsx src/main.ts doctor",
+    "reset-ui-passphrase": "tsx src/main.ts reset-ui-passphrase",
+    "tokens": "tsx scripts/gen-tokens.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "secrets": "tsx scripts/secret-scan.ts",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm secrets"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "googleapis": "^189.0.0",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "axe-core": "4.10.2",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "playwright": "1.63.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
+  }
+}

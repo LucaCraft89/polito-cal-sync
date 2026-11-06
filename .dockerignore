@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+dist
+data
+coverage
+probe
+test
+docs/*
+!docs/ERRORS.md
+.env
+.env.*
+!.env.example
+*.log

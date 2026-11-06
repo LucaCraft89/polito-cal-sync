@@ -1,0 +1,12 @@
+# 039 The run lock refreshes itself; stale after 90 seconds, not 20 minutes
+
+**Context.** The owner pressed Sync now twice, 14 minutes apart, and both times got `E_SYNC_ALREADY_RUNNING` ("another sync is running"). A normal sync takes under a minute, so the likely cause is a lock left behind by a run that was interrupted (the container restarted or was recreated in the middle of a sync). Decision 012's lock counted as dead only 20 minutes after it was **taken**, so it blocked every sync, scheduled and manual, for that long. A pid check cannot help: in Docker the service is PID 1 in every container, so the dead holder's pid looks alive. (The cause on the owner's machine was not observed; this is the explanation that fits and the fix does not depend on it.)
+
+**Decided** (`src/sync/lock.ts`)
+
+- **The holder refreshes the lock every 15 seconds** while it works (`beat` in the lock file, a timer that does not keep the process alive). A lock is dead when its last sign of life (`beat`, or `at` for a lock written by the older version) is **more than 90 seconds** old. A long sync (hundreds of events, Google back-off) keeps beating and is never taken for dead; a lock left by a stopped container clears within 90 seconds, also across containers.
+- **Never two holders.** Each lock carries a random token. A holder only refreshes or removes a lock that is still its own: one that was paused for minutes and found its lock taken over stops beating and never overwrites or deletes the new holder's lock.
+- **The refusal says who and since when**: "Another sync is running on this data folder (the scheduled service since 11:31 UTC)". The labels: the scheduled service, the Sync now button, a command-line sync. `readRunLock` reports a live lock; the Service page shows "A sync is running (...)" with the start time from the lock file (not only from the loop's own state), so a run started from the page or the command line is visible too. ERRORS.md describes the 90 seconds and the manual way out (delete `sync.lock`).
+- Unchanged: the dry-run (preview) never takes the lock; a lock still blocks scheduled and manual runs alike.
+
+**Verified how.** Tests with an injected clock and short beats: who and since in the message and in `readRunLock`; dead after 90 s without beats, alive at 89 s; a working holder with beats survives 5 minutes of fake time; a taken-over holder neither overwrites nor removes the new lock. The older lock tests and the Sync now lock test pass unchanged.
